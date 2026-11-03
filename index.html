@@ -113,7 +113,7 @@ const scanbar=m=>`<div class="sb"><input id="sq" placeholder="Штрихкод, 
 const V={
 home(){const a=sum(today(),today()),low=db.products.filter(p=>p.active&&p.stock<=p.low);
 return `<h1>Сегодня</h1><div class="g"><div class="c w"><small>Продажи</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div>
-<div class="row"><button class="pb" onclick="go('sale')">Продажа</button><button onclick="go('buy')">Закупка</button><button onclick="go('inv')">Пересчёт</button></div>
+<div class="row"><button class="pb" onclick="go('sale')">Продажа</button><button onclick="go('buy')">Закупка</button><button onclick="go('inv')">Пересчёт</button><button onclick="localStorage.removeItem('shop_saas_v2'); location.reload();" style="background: var(--er); color: white;">Сбросить БД</button></div>
 <h2>Заканчивается</h2>${low.length?low.map(prow).join(''):'<p class="mu">'+(db.products.length?'Всё в наличии.':'Товаров пока нет. Добавьте их в разделе «Товары» или начните с закупки.')+'</p>'}`},
 sale(){let t=0;const h=S.cart.map((l,i)=>{const p=P(l.pid);t+=l.q*(+l.price||0);return `<div class="c"><div class="r">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>остаток ${avail(p)}</small></div><button class="x" aria-label="Убрать" onclick="S.cart.splice(${i},1);render()">✕</button></div>
 <div class="r" style="margin-top:8px"><button class="x" onclick="sq(${i},-1)">−</button><b class="q">${l.q}</b><button class="x" onclick="sq(${i},1)">+</button><input class="pi" inputmode="decimal" aria-label="Цена" value="${esc(l.price)}" onchange="S.cart[${i}].price=this.value;render()"><span class="lt">${fmt(l.q*(+l.price||0))}</span></div>
