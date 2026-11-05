@@ -39,6 +39,8 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 #toast{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;padding:12px 14px;border-radius:12px;display:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 .bar{display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:14px}
 .gr{background:var(--ok);color:var(--pt);border-color:var(--ok)}.rd{background:var(--er);color:var(--pt);border-color:var(--er)}
+
+/* Скрываем элементы с классом owner-only, если включен режим кассира */
 .cashier-mode .owner-only { display: none !important; }
 </style>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -49,6 +51,7 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 <nav id="nav">
   <button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button>
   <button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button>
+  <!-- Добавлен класс owner-only для скрытия от кассира -->
   <button class="owner-only" data-t="buy" onclick="go('buy')"><span>📥</span>Закупка</button>
   <button data-t="sale" onclick="go('sale')"><span>🛒</span>Продажа</button>
   <button class="owner-only" data-t="inv" onclick="go('inv')"><span>📋</span>Сверка</button>
@@ -64,8 +67,7 @@ if (tg) { tg.ready(); tg.expand(); }
 const SUPABASE_URL = 'https://zejpqdzashqaudcxdpoh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5FcwXPo1yU6BzYhmmfVQcA_DNv9U7ku';
 let sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-let STORE = null, USER = null, ROLE = 'owner', STORE_NAME = 'Сегодня', P = [], busy = false, ASK = null, T = null, CB = null, tmr;
-window.MAX_SKU = 999999; 
+let STORE = null, USER = null, ROLE = null, STORE_NAME = 'Сегодня', P = [], busy = false, ASK = null, T = null, CB = null, tmr;
 const LOW = 2;
 
 const $ = s => document.querySelector(s);
@@ -91,16 +93,13 @@ function toast(m, k) {
 async function run(fn) {
   if (busy) return; busy = true;
   try { await fn(); }
-  catch (e) {
-    const m = e.message || String(e);
-    toast(/jwt|token/i.test(m) ? 'Сессия истекла — закройте и откройте приложение' : m, 'er');
-  } finally { busy = false; render(); }
+  catch (e) { toast(/jwt|token/i.test(e.message||'') ? 'Сессия истекла' : (e.message || String(e)), 'er'); } 
+  finally { busy = false; render(); }
 }
 function modal(h) { $('#mb').innerHTML = h; $('#md').hidden = false; }
 function closeModal() { $('#md').hidden = true; }
 function ask(t, y) { ASK = y; modal(`<h2>${esc(t)}</h2><div class="row"><button onclick="closeModal()">Нет</button><button class="pb" onclick="closeModal();ASK()">Да</button></div>`); }
 
-// ---------- ДАННЫЕ ----------
 async function load() {
   let all = [], f = 0;
   for (;;) {
@@ -137,7 +136,6 @@ function find(q) {
   return P.filter(p => (p.name || '').toLowerCase().includes(l));
 }
 
-// ---------- ЭКРАНЫ ----------
 const ph=p=>p.photo?`<img class="th" src="${p.photo}" alt="">`:'<div class="ph">📦</div>';
 const row = p => `<div class="c r" onclick="pform(G('${p.id}'))" style="cursor:pointer">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><div style="text-align:right"><b class="${p.stock_quantity <= LOW ? 'lo' : ''}">${p.stock_quantity} шт</b><br><small>${p.retail_price ? fmt(p.retail_price) : 'без цены'}</small></div></div>`;
 const scanbar = m => `<div class="sb"><input id="sq" placeholder="Штрихкод или название" inputmode="search" onkeydown="if(event.key==='Enter')look('${m}')"><button onclick="look('${m}')">Найти</button><button aria-label="Камера" onclick="cam('${m}')">📷</button></div>`;
@@ -145,9 +143,13 @@ const scanbar = m => `<div class="sb"><input id="sq" placeholder="Штрихко
 const V = {
   async home() {
     const a = await stats(today(), today()), low = P.filter(p => p.stock_quantity <= LOW);
+    // Добавлен класс owner-only на блок с финансами
     return `<h1>${esc(STORE_NAME)}</h1><div class="g owner-only"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}`;
   },
-  prod() { return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="cam('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; },
+  prod() { 
+    // Добавлен класс owner-only на кнопку "Новый товар"
+    return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="cam('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; 
+  },
   sale() {
     let t = 0;
     const h = S.cart.map((l, i) => {
@@ -232,13 +234,12 @@ function markDoc(k, id, del) {
   run(async () => { const { error } = await sb.rpc('doc_mark', { p_kind: k, p_id: id, p_deleted: del }); if (error) throw error; closeModal(); await load(); await loadDocs(k); toast(del ? 'Помечен на удаление' : 'Пометка снята', 'ok'); });
 }
 
-// ---------- ПОИСК / СКАНЕР ----------
 function look(m) { const e = $('#sq'), v = e.value; e.value = ''; code(m, v); }
 function code(m, v) {
   v = v.trim(); if (!v) return;
   const l = find(v);
   if (!l.length) { closeCam(); return pform(/^\d{6,}$/.test(v) ? { barcode: v } : { name: v }, p => hit(m, p)); }
-  if (l.length === 1) { closeCam(); return hit(m, l[0]); } // уберите closeCam(), если нужно сканировать подряд
+  if (l.length === 1) { closeCam(); return hit(m, l[0]); }
   closeCam(); T = { l, cb: p => hit(m, p) };
   modal('<h2>Выберите товар</h2>' + l.map((p, i) => `<div class="c r" onclick="closeModal();T.cb(T.l[${i}])" style="cursor:pointer"><div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><b>${p.stock_quantity} шт</b></div>`).join(''));
 }
@@ -268,7 +269,7 @@ async function cam(m) {
   try {
     if (!CAMSTREAM || !CAMSTREAM.getVideoTracks().some(t => t.readyState === 'live'))
       CAMSTREAM = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    $('#cam').hidden = false; 
+    $('#cam').hidden = false;
     const reader = new ZXing.BrowserMultiFormatReader();
     const c = { reader, on: 1, last: '', lt: 0 }; CB = c;
     const copy = new MediaStream(CAMSTREAM.getVideoTracks().map(t => t.clone()));
@@ -281,21 +282,13 @@ async function cam(m) {
         code(m, x);
       }
     });
-  } catch (e) {
-    closeCam(); releaseCam();
-    toast('Камера недоступна или доступ запрещён', 'er');
-  }
+  } catch (e) { closeCam(); releaseCam(); toast('Камера недоступна или доступ запрещён', 'er'); }
 }
 function closeCam() {
-  if (CB) {
-    CB.on = 0; try { CB.reader.reset(); } catch (e) {}
-    CB = null; clearTimeout(camIdle); camIdle = setTimeout(releaseCam, CAM_IDLE_MS);
-  }
-  const v = $('#cv'); if (v) v.srcObject = null;
-  $('#cam').hidden = true;
+  if (CB) { CB.on = 0; try { CB.reader.reset(); } catch (e) {} CB = null; clearTimeout(camIdle); camIdle = setTimeout(releaseCam, CAM_IDLE_MS); }
+  const v = $('#cv'); if (v) v.srcObject = null; $('#cam').hidden = true;
 }
 
-// ---------- ТОВАРЫ ----------
 function pform(p, cb) {
   T = { photo: p.photo || null, cb }; const e = !!p.id;
   modal(`<h2>${e ? 'Товар' : 'Новый товар'}</h2>
@@ -324,8 +317,7 @@ function photo(inp) {
     URL.revokeObjectURL(u);
     $('#pp').innerHTML = `<img src="${T.photo}" style="width:100%;max-height:220px;object-fit:contain;display:block" alt="">`;
   };
-  im.onerror = () => toast('Не удалось прочитать фото', 'er');
-  im.src = u;
+  im.onerror = () => toast('Не удалось прочитать фото', 'er'); im.src = u;
 }
 
 function psave(id) {
@@ -334,27 +326,14 @@ function psave(id) {
     if (!n && !b) throw new Error('Укажите название или штрихкод');
     if (r === false) throw new Error('Цена указана неверно');
     if (b && P.some(x => x.barcode === b && x.id !== id)) throw new Error('Такой штрихкод уже есть');
-    
-    if (!id && window.MAX_SKU && P.length >= window.MAX_SKU) {
-        throw new Error(`Лимит тарифа: максимум ${window.MAX_SKU} товаров. Пора расширяться!`);
-    }
-
     const row_data = { name: n || null, barcode: b || null, retail_price: r, photo: T.photo || null };
     const cb = T && T.cb; let p = null;
-    if (id) { 
-        const { error } = await sb.from('products').update(row_data).eq('id', id).eq('store_id', STORE); 
-        if (error) throw error; 
-    } else { 
-        const { data, error } = await sb.from('products').insert({ ...row_data, store_id: STORE, stock_quantity: 0, cost_price: 0 }).select().single(); 
-        if (error) throw error; 
-        p = data; 
-    }
-    closeModal(); await load(); toast('Товар сохранён', 'ok');
-    if (cb && p) cb(G(p.id));
+    if (id) { const { error } = await sb.from('products').update(row_data).eq('id', id).eq('store_id', STORE); if (error) throw error; } 
+    else { const { data, error } = await sb.from('products').insert({ ...row_data, store_id: STORE, stock_quantity: 0, cost_price: 0 }).select().single(); if (error) throw error; p = data; }
+    closeModal(); await load(); toast('Товар сохранён', 'ok'); if (cb && p) cb(G(p.id));
   });
 }
 
-// ---------- ПРОДАЖА / ЗАКУПКА / ПЕРЕСЧЁТ ----------
 function sq(i, d) { const l = S.cart[i], q = l.q + d; if (q < 1) S.cart.splice(i, 1); else l.q = q; render(); }
 function sell() {
   const c = S.cart; if (!c.length) return;
@@ -384,7 +363,6 @@ function invOk() {
   });
 }
 
-// ---------- ЗАПУСК И АВТОРИЗАЦИЯ ----------
 async function startApp() {
   if (!tg || !tg.initData) { $('#app').innerHTML = '<h1>Откройте в Telegram</h1><p class="mu">Приложение работает только внутри Telegram.</p>'; return; }
   try {
@@ -393,32 +371,23 @@ async function startApp() {
     if (!data || !data.store_id) throw new Error('Ответ сервера: ' + JSON.stringify(data));
     if (!data.token) throw new Error('Сервер не выдал токен — обновите функцию auth-store');
     
-    STORE = data.store_id; USER = data.telegram_id;
+    STORE = data.store_id; 
+    USER = data.telegram_id;
+    
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + data.token } } });
     
-    try {
-      const { data: st } = await sb.from('stores').select('name,sub_status,max_sku').eq('id', STORE).maybeSingle();
-      if (st) {
-        STORE_NAME = st.name || STORE_NAME;
-        if (st.max_sku) window.MAX_SKU = st.max_sku; 
-        if (st.sub_status === 'inactive') { $('#app').innerHTML = '<h1>Подписка неактивна</h1><p class="mu">Обратитесь к владельцу сервиса.</p>'; return; }
-      }
-
-      // Если у вас еще нет таблицы users, этот код просто проигнорируется и оставит роль owner
-      const { data: ud } = await sb.from('users').select('role').eq('telegram_id', USER).maybeSingle();
-      if (ud && ud.role) {
-          ROLE = ud.role;
-      }
-    } catch (e) {
-      console.log('Настройки ролей/лимитов пока не загружены', e);
-    }
-
-    if (ROLE === 'cashier') {
+    // ДОБАВЛЕНО: Запрос роли из базы данных
+    const { data: userData } = await sb.from('users').select('role').eq('telegram_id', USER).maybeSingle();
+    if (userData && userData.role === 'cashier') {
       document.body.classList.add('cashier-mode');
-    } else {
-      document.body.classList.remove('cashier-mode');
     }
 
+    const { data: st } = await sb.from('stores').select('name,sub_status').eq('id', STORE).maybeSingle();
+    if (st) {
+      STORE_NAME = st.name || STORE_NAME;
+      if (st.sub_status === 'inactive') { $('#app').innerHTML = '<h1>Подписка неактивна</h1><p class="mu">Обратитесь к владельцу сервиса.</p>'; return; }
+    }
+    
     await load();
     await render();
     toast('Вход выполнен', 'ok');
