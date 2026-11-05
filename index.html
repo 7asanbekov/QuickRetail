@@ -291,24 +291,56 @@ function closeCam() {
 
 // ---------- ТОВАРЫ ----------
 function pform(p, cb) {
-  T = { cb }; const e = !!p.id;
+  T = { photo: p.photo || null, cb }; const e = !!p.id;
   modal(`<h2>${e ? 'Товар' : 'Новый товар'}</h2>
+  <div class="r" style="margin-bottom:12px">
+    <div id="pp" onclick="$('#pf').click()" style="cursor:pointer">${p.photo?`<img class="th" src="${p.photo}" alt="">`:'<div class="ph" style="cursor:pointer">📷<small>Фото</small></div>'}</div>
+    <input id="pf" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
+  </div>
   <label>Название<input id="fn" value="${esc(p.name || '')}"></label>
   <label>Штрихкод<input id="fb" inputmode="numeric" value="${esc(p.barcode || '')}"></label>
   <label>Цена продажи, сом<input id="fp" inputmode="decimal" value="${p.retail_price || ''}"></label>
   ${e ? `<small>Остаток: ${p.stock_quantity} шт (меняется закупкой и сверкой остатков)</small>` : ''}
   <div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="psave('${p.id || ''}')">Сохранить</button></div>`);
 }
+
+function photo(inp) {
+  const f = inp.files[0]; if (!f) return;
+  if (!/^image\//.test(f.type) || f.size > 20e6) return toast('Нужна картинка до 20 МБ', 'er');
+  const im = new Image(), u = URL.createObjectURL(f);
+  im.onload = () => {
+    // Сжимаем фото прямо на устройстве для экономии места в БД
+    const k = Math.min(1, 260 / Math.max(im.width, im.height)), c = document.createElement('canvas');
+    c.width = im.width * k; c.height = im.height * k;
+    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    T.photo = c.toDataURL('image/jpeg', 0.65); // Конвертируем в Base64
+    URL.revokeObjectURL(u);
+    $('#pp').innerHTML = `<img class="th" src="${T.photo}" alt="">`;
+  };
+  im.onerror = () => toast('Не удалось прочитать фото', 'er');
+  im.src = u;
+}
+
 function psave(id) {
   run(async () => {
     const n = $('#fn').value.trim(), b = $('#fb').value.trim(), r = num($('#fp').value);
     if (!n && !b) throw new Error('Укажите название или штрихкод');
     if (r === false) throw new Error('Цена указана неверно');
     if (b && P.some(x => x.barcode === b && x.id !== id)) throw new Error('Такой штрихкод уже есть');
-    const row = { name: n || null, barcode: b || null, retail_price: r };
+    
+    // ДОБАВЛЕНО: передаем T.photo в полезную нагрузку (payload)
+    const row_data = { name: n || null, barcode: b || null, retail_price: r, photo: T.photo || null };
     const cb = T && T.cb; let p = null;
-    if (id) { const { error } = await sb.from('products').update(row).eq('id', id).eq('store_id', STORE); if (error) throw error; }
-    else { const { data, error } = await sb.from('products').insert({ ...row, store_id: STORE, stock_quantity: 0, cost_price: 0 }).select().single(); if (error) throw error; p = data; }
+    
+    if (id) { 
+        const { error } = await sb.from('products').update(row_data).eq('id', id).eq('store_id', STORE); 
+        if (error) throw error; 
+    } else { 
+        const { data, error } = await sb.from('products').insert({ ...row_data, store_id: STORE, stock_quantity: 0, cost_price: 0 }).select().single(); 
+        if (error) throw error; 
+        p = data; 
+    }
+    
     closeModal(); await load(); toast('Товар сохранён', 'ok');
     if (cb && p) cb(G(p.id));
   });
