@@ -45,6 +45,7 @@ textarea{width:100%;height:180px;border-radius:12px;border:1px solid var(--br);b
 .sm{min-height:40px;font-size:14px;padding:0 10px}.gr{background:var(--ok);color:var(--pt);border-color:var(--ok)}.rd{background:var(--er);color:var(--pt);border-color:var(--er)}
 </style>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head><body>
 <div id="app"></div>
 <nav><button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button><button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button><button data-t="buy" onclick="go('buy')"><span>📥</span>Закупка</button><button data-t="sale" onclick="go('sale')"><span>🛒</span>Продажа</button><button data-t="inv" onclick="go('inv')"><span>📋</span>Пересчёт</button><button data-t="rep" onclick="go('rep')"><span>📊</span>Отчёты</button></nav>
@@ -52,6 +53,11 @@ textarea{width:100%;height:180px;border-radius:12px;border:1px solid var(--br);b
 <div class="ov" id="md" hidden><div class="sh" id="mb"></div></div><div id="toast" role="status"></div>
 <script>
 const tg=window.Telegram&&window.Telegram.WebApp;if(tg){tg.ready();tg.expand()}
+
+// ИНИЦИАЛИЗАЦИЯ SUPABASE
+const SUPABASE_URL = 'https://zejpqdzashqaudcxdpoh.supabase.co';
+const SUPABASE_KEY = 'ВАШ_ANON_KEY';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const $=s=>document.querySelector(s),K='shop_saas_v2';
 
@@ -72,6 +78,15 @@ db=db||{
     n: {}, seq: 0, inv: null
 };
 db.invs=db.invs||[];db.n=db.n||{};
+
+// АСИНХРОННАЯ ЗАГРУЗКА ТОВАРОВ ИЗ SUPABASE
+async function loadProducts(){
+    const {data,error}=await supabase.from('products').select('*').eq('store_id',STORE_ID);
+    if(!error&&data){db.products=data;if(S.tab==='prod'||S.tab==='home')render();}
+    else if(error){console.error(error);toast('Ошибка загрузки каталога','er');}
+}
+loadProducts(); // Вызываем сразу при старте приложения
+
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
 const r2=n=>Math.round(n*100)/100,r4=n=>Math.round(n*1e4)/1e4;
 const fmt=n=>r2(+n||0).toLocaleString('ru-RU')+' сом';
@@ -191,12 +206,47 @@ function pform(p,cb){T={photo:p.photo||null,cb};const e=!!p.id;modal(`<h2>${e?'�
 <div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="psave('${p.id||''}')">Сохранить</button></div>`)}
 function photo(inp){const f=inp.files[0];if(!f)return;if(!/^image\//.test(f.type)||f.size>20e6)return toast('Нужна картинка до 20 МБ','er');const im=new Image(),u=URL.createObjectURL(f);im.onload=()=>{const k=Math.min(1,260/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);T.photo=c.toDataURL('image/jpeg',.65);URL.revokeObjectURL(u);$('#pp').innerHTML=`<img class="th" src="${T.photo}" alt="">`};im.onerror=()=>toast('Не удалось прочитать фото','er');im.src=u}
 
-// ОБНОВЛЕНО: Добавлен store_id при создании товара
-function psave(id,force){const n=$('#fn').value.trim(),b=$('#fb').value.trim(),pr=$('#fp').value.trim().replace(',','.');if(pr!==''&&!(+pr>=0))return toast('Цена указана неверно','er');const cb=T.cb,ph0=T.photo;let p;
-if(id){p=P(id);if(tx(()=>{p.name=n;p.photo=ph0;p.price=pr===''?null:r2(+pr);p.active=$('#fa').checked}))done()}
-else{const ex=db.products.filter(x=>b&&x.barcode===b);if(ex.length&&!force){return ask('Штрихкод уже есть у «'+nm(ex[0])+'». Это другой товар с тем же штрихкодом?',()=>{pform({name:n,barcode:b,price:pr===''?null:+pr,photo:ph0},cb);T.cb=cb;psave('',true)})}
-if(tx(()=>{p={id:uid(), store_id:STORE_ID, code:'P'+String(++db.seq).padStart(5,'0'),barcode:b||null,v:ex.length?Math.max(...ex.map(x=>x.v))+1:1,name:n,photo:ph0,price:pr===''?null:r2(+pr),stock:0,avg:0,last:null,low:2,active:true};db.products.push(p)}))done()}
-function done(){closeModal();toast('Товар сохранён','ok');cb?cb(p):render()}}
+// ОБНОВЛЕНО: Асинхронное сохранение/обновление товара в облаке Supabase
+async function psave(id,force){
+    const n=$('#fn').value.trim(),b=$('#fb').value.trim(),pr=$('#fp').value.trim().replace(',','.');
+    if(pr!==''&&!(+pr>=0))return toast('Цена указана неверно','er');
+    const cb=T.cb,ph0=T.photo;let p;
+    
+    if(!id){
+        const ex=db.products.filter(x=>b&&x.barcode===b);
+        if(ex.length&&!force){
+            return ask('Штрихкод уже есть у «'+nm(ex[0])+'». Это другой товар с тем же штрихкодом?',()=>{pform({name:n,barcode:b,price:pr===''?null:+pr,photo:ph0},cb);T.cb=cb;psave('',true)});
+        }
+    }
+
+    toast('Сохранение в облако...', 'tx');
+    const payload = {
+        store_id: STORE_ID, 
+        name: n, 
+        barcode: b || null, 
+        price: pr === '' ? null : r2(+pr), 
+        photo: ph0 || null, 
+        active: id ? $('#fa').checked : true
+    };
+
+    if (id) {
+        const { error } = await supabase.from('products').update(payload).eq('id', id);
+        if (error) return toast('Ошибка обновления: ' + error.message, 'er');
+        p = { ...P(id), ...payload };
+    } else {
+        payload.code = 'P' + String(Date.now()).slice(-6);
+        payload.stock = 0; payload.avg = 0; payload.low = 2; // Базовые значения
+        const { data, error } = await supabase.from('products').insert([payload]).select();
+        if (error) return toast('Ошибка создания: ' + error.message, 'er');
+        p = data[0];
+    }
+
+    closeModal();
+    toast('Товар сохранён', 'ok');
+    await loadProducts(); 
+    cb ? cb(p) : render();
+}
+
 let CB=null;
 async function cam(m){if(!('BarcodeDetector'in window))return toast('Этот браузер не умеет сканировать камерой. Введите код вручную (на Android лучше Chrome).','er');if(!navigator.mediaDevices?.getUserMedia)return toast('Камера недоступна: нужна защищённая страница (https).','er');
 let st;try{st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})}catch(e){return toast(e.name==='NotAllowedError'?'Доступ к камере запрещён. Разрешите камеру в настройках браузера или введите код вручную.':'Камера недоступна ('+e.name+'). Введите код вручную.','er')}
