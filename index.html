@@ -129,7 +129,8 @@ function find(q) {
 }
 
 // ---------- ЭКРАНЫ ----------
-const row = p => `<div class="c r" onclick="pform(G('${p.id}'))" style="cursor:pointer"><div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><div style="text-align:right"><b class="${p.stock_quantity <= LOW ? 'lo' : ''}">${p.stock_quantity} шт</b><br><small>${p.retail_price ? fmt(p.retail_price) : 'без цены'}</small></div></div>`;
+const ph=p=>p.photo?`<img class="th" src="${p.photo}" alt="">`:'<div class="ph">📦</div>';
+const row = p => `<div class="c r" onclick="pform(G('${p.id}'))" style="cursor:pointer">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><div style="text-align:right"><b class="${p.stock_quantity <= LOW ? 'lo' : ''}">${p.stock_quantity} шт</b><br><small>${p.retail_price ? fmt(p.retail_price) : 'без цены'}</small></div></div>`;
 const scanbar = m => `<div class="sb"><input id="sq" placeholder="Штрихкод или название" inputmode="search" onkeydown="if(event.key==='Enter')look('${m}')"><button onclick="look('${m}')">Найти</button><button aria-label="Камера" onclick="cam('${m}')">📷</button></div>`;
 
 const V = {
