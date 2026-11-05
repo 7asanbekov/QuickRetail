@@ -39,26 +39,34 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 #toast{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;padding:12px 14px;border-radius:12px;display:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 .bar{display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:14px}
 .gr{background:var(--ok);color:var(--pt);border-color:var(--ok)}.rd{background:var(--er);color:var(--pt);border-color:var(--er)}
+.cashier-mode .owner-only { display: none !important; }
 </style>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
 <body>
 <div id="app"><p class="mu" style="text-align:center;padding-top:40px">Подключение к серверу...</p></div>
-<nav id="nav"><button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button><button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button><button data-t="buy" onclick="go('buy')"><span>📥</span>Закупка</button><button data-t="sale" onclick="go('sale')"><span>🛒</span>Продажа</button><button data-t="inv" onclick="go('inv')"><span>📋</span>Сверка</button><button data-t="rep" onclick="go('rep')"><span>📊</span>Отчёты</button></nav>
+<nav id="nav">
+  <button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button>
+  <button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button>
+  <button class="owner-only" data-t="buy" onclick="go('buy')"><span>📥</span>Закупка</button>
+  <button data-t="sale" onclick="go('sale')"><span>🛒</span>Продажа</button>
+  <button class="owner-only" data-t="inv" onclick="go('inv')"><span>📋</span>Сверка</button>
+  <button class="owner-only" data-t="rep" onclick="go('rep')"><span>📊</span>Отчёты</button>
+</nav>
 <div id="cam" hidden><video id="cv" playsinline muted></video><div><span class="f">Наведите на штрихкод</span><button onclick="closeCam()">Готово</button></div></div>
 <div class="ov" id="md" hidden><div class="sh" id="mb"></div></div><div id="toast" role="status"></div>
 
 <script>
-// Без try-обёртки: все функции и состояние глобальные, inline-обработчики их видят.
 const tg = window.Telegram && Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
 const SUPABASE_URL = 'https://zejpqdzashqaudcxdpoh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5FcwXPo1yU6BzYhmmfVQcA_DNv9U7ku';
 let sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-let STORE = null, USER = null, STORE_NAME = 'Сегодня', P = [], busy = false, ASK = null, T = null, CB = null, tmr;
-const LOW = 2; // порог «заканчивается» (в схеме нет отдельной колонки)
+let STORE = null, USER = null, ROLE = 'owner', STORE_NAME = 'Сегодня', P = [], busy = false, ASK = null, T = null, CB = null, tmr;
+window.MAX_SKU = 999999; 
+const LOW = 2;
 
 const $ = s => document.querySelector(s);
 const r2 = n => Math.round(n * 100) / 100;
@@ -80,7 +88,6 @@ function toast(m, k) {
   t.style.color = k ? 'var(--pt)' : 'var(--bg)';
   clearTimeout(tmr); tmr = setTimeout(() => t.style.display = 'none', k === 'er' ? 3500 : 1500);
 }
-// Единая обёртка для операций с сервером: блокирует двойное нажатие и показывает ошибки.
 async function run(fn) {
   if (busy) return; busy = true;
   try { await fn(); }
@@ -138,9 +145,9 @@ const scanbar = m => `<div class="sb"><input id="sq" placeholder="Штрихко
 const V = {
   async home() {
     const a = await stats(today(), today()), low = P.filter(p => p.stock_quantity <= LOW);
-    return `<h1>${esc(STORE_NAME)}</h1><div class="g"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}`;
+    return `<h1>${esc(STORE_NAME)}</h1><div class="g owner-only"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}`;
   },
-  prod() { return `<h1>Товары</h1><div class="row"><button class="pb" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="cam('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; },
+  prod() { return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="cam('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; },
   sale() {
     let t = 0;
     const h = S.cart.map((l, i) => {
@@ -242,8 +249,6 @@ function hit(m, p) {
   toast('+ ' + nm(p)); render();
 }
 
-// Камера: iOS спрашивает разрешение при каждом getUserMedia. Поэтому исходный поток держим открытым
-// между сканированиями (разрешение запрашивается один раз) и отпускаем после CAM_IDLE_MS простоя.
 let CAMSTREAM = null, camIdle = null;
 const CAM_IDLE_MS = 3 * 60 * 1000;
 function releaseCam() { clearTimeout(camIdle); if (CAMSTREAM) { CAMSTREAM.getTracks().forEach(t => t.stop()); CAMSTREAM = null; } }
@@ -263,10 +268,9 @@ async function cam(m) {
   try {
     if (!CAMSTREAM || !CAMSTREAM.getVideoTracks().some(t => t.readyState === 'live'))
       CAMSTREAM = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    $('#cam').hidden = false; // показываем окно только после получения доступа
+    $('#cam').hidden = false; 
     const reader = new ZXing.BrowserMultiFormatReader();
     const c = { reader, on: 1, last: '', lt: 0 }; CB = c;
-    // сканеру отдаём КОПИЮ дорожек: reader.reset() остановит копию, а исходный поток (и разрешение) останется
     const copy = new MediaStream(CAMSTREAM.getVideoTracks().map(t => t.clone()));
     await reader.decodeFromStream(copy, 'cv', res => {
       if (!c.on || !res) return;
@@ -330,6 +334,11 @@ function psave(id) {
     if (!n && !b) throw new Error('Укажите название или штрихкод');
     if (r === false) throw new Error('Цена указана неверно');
     if (b && P.some(x => x.barcode === b && x.id !== id)) throw new Error('Такой штрихкод уже есть');
+    
+    if (!id && window.MAX_SKU && P.length >= window.MAX_SKU) {
+        throw new Error(`Лимит тарифа: максимум ${window.MAX_SKU} товаров. Пора расширяться!`);
+    }
+
     const row_data = { name: n || null, barcode: b || null, retail_price: r, photo: T.photo || null };
     const cb = T && T.cb; let p = null;
     if (id) { 
@@ -345,7 +354,7 @@ function psave(id) {
   });
 }
 
-// ---------- ПРОДАЖА / ЗАКУПКА / ПЕРЕСЧЁТ (через RPC, атомарно на сервере) ----------
+// ---------- ПРОДАЖА / ЗАКУПКА / ПЕРЕСЧЁТ ----------
 function sq(i, d) { const l = S.cart[i], q = l.q + d; if (q < 1) S.cart.splice(i, 1); else l.q = q; render(); }
 function sell() {
   const c = S.cart; if (!c.length) return;
@@ -383,14 +392,33 @@ async function startApp() {
     if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (e) {} throw new Error(m); }
     if (!data || !data.store_id) throw new Error('Ответ сервера: ' + JSON.stringify(data));
     if (!data.token) throw new Error('Сервер не выдал токен — обновите функцию auth-store');
+    
     STORE = data.store_id; USER = data.telegram_id;
-    // Клиент пересоздаётся с токеном: все запросы идут от имени магазина (работает RLS).
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + data.token } } });
-    const { data: st } = await sb.from('stores').select('name,sub_status').eq('id', STORE).maybeSingle();
-    if (st) {
-      STORE_NAME = st.name || STORE_NAME;
-      if (st.sub_status === 'inactive') { $('#app').innerHTML = '<h1>Подписка неактивна</h1><p class="mu">Обратитесь к владельцу сервиса.</p>'; return; }
+    
+    try {
+      const { data: st } = await sb.from('stores').select('name,sub_status,max_sku').eq('id', STORE).maybeSingle();
+      if (st) {
+        STORE_NAME = st.name || STORE_NAME;
+        if (st.max_sku) window.MAX_SKU = st.max_sku; 
+        if (st.sub_status === 'inactive') { $('#app').innerHTML = '<h1>Подписка неактивна</h1><p class="mu">Обратитесь к владельцу сервиса.</p>'; return; }
+      }
+
+      // Если у вас еще нет таблицы users, этот код просто проигнорируется и оставит роль owner
+      const { data: ud } = await sb.from('users').select('role').eq('telegram_id', USER).maybeSingle();
+      if (ud && ud.role) {
+          ROLE = ud.role;
+      }
+    } catch (e) {
+      console.log('Настройки ролей/лимитов пока не загружены', e);
     }
+
+    if (ROLE === 'cashier') {
+      document.body.classList.add('cashier-mode');
+    } else {
+      document.body.classList.remove('cashier-mode');
+    }
+
     await load();
     await render();
     toast('Вход выполнен', 'ok');
