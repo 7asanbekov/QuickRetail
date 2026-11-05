@@ -224,22 +224,14 @@ function markDoc(k, id, del) {
 
 // ---------- ПОИСК / СКАНЕР ----------
 function look(m) { const e = $('#sq'), v = e.value; e.value = ''; code(m, v); }
-
 function code(m, v) {
   v = v.trim(); if (!v) return;
   const l = find(v);
   if (!l.length) { closeCam(); return pform(/^\d{6,}$/.test(v) ? { barcode: v } : { name: v }, p => hit(m, p)); }
-  
-  // ДОБАВЛЕНО: Закрываем камеру, если товар найден в базе
-  if (l.length === 1) { 
-      closeCam(); 
-      return hit(m, l[0]); 
-  }
-  
+  if (l.length === 1) { closeCam(); return hit(m, l[0]); } // уберите closeCam(), если нужно сканировать подряд
   closeCam(); T = { l, cb: p => hit(m, p) };
   modal('<h2>Выберите товар</h2>' + l.map((p, i) => `<div class="c r" onclick="closeModal();T.cb(T.l[${i}])" style="cursor:pointer"><div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><b>${p.stock_quantity} шт</b></div>`).join(''));
 }
-
 function hit(m, p) {
   if (m === 'sale') { const l = S.cart.find(x => x.id === p.id); if (l) l.q++; else S.cart.push({ id: p.id, q: 1, price: p.retail_price || '' }); }
   else if (m === 'buy') { const l = S.pcart.find(x => x.id === p.id); if (l) l.q = (+l.q || 0) + 1; else S.pcart.push({ id: p.id, q: 1, cost: p.cost_price || '' }); }
@@ -247,83 +239,50 @@ function hit(m, p) {
   toast('+ ' + nm(p)); render();
 }
 
-// Вызов нативного сканера Telegram
-function cam(m) {
-  if (!tg || !tg.showScanQrPopup) return toast('Сканер недоступен. Откройте в Telegram.', 'er');
-  
-  tg.showScanQrPopup({ text: "Наведите на штрихкод" }, function(text) {
-    if (text) {
-      // Тактильный отклик при успешном сканировании
-      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-      
-      // Передаем штрихкод в функцию поиска
-      code(m, text);
-      
-      // Обязательно возвращаем true, чтобы Telegram сам мгновенно закрыл камеру
-      return true; 
-    }
-  });
-}
-
-function closeCam() {
-  // Оставляем пустой. Нативный сканер закрывается сам, 
-  // но функция нужна, чтобы старые вызовы при переходе по вкладкам не выдавали ошибку
-}
-function hit(m, p) {
-  if (m === 'sale') { const l = S.cart.find(x => x.id === p.id); if (l) l.q++; else S.cart.push({ id: p.id, q: 1, price: p.retail_price || '' }); }
-  else if (m === 'buy') { const l = S.pcart.find(x => x.id === p.id); if (l) l.q = (+l.q || 0) + 1; else S.pcart.push({ id: p.id, q: 1, cost: p.cost_price || '' }); }
-  else { const x = S.inv[p.id] || (S.inv[p.id] = { cnt: 0, cost: '' }); x.cnt++; }
-  toast('+ ' + nm(p)); render();
-}
-
+// Камера: iOS спрашивает разрешение при каждом getUserMedia. Поэтому исходный поток держим открытым
+// между сканированиями (разрешение запрашивается один раз) и отпускаем после CAM_IDLE_MS простоя.
+let CAMSTREAM = null, camIdle = null;
+const CAM_IDLE_MS = 3 * 60 * 1000;
+function releaseCam() { clearTimeout(camIdle); if (CAMSTREAM) { CAMSTREAM.getTracks().forEach(t => t.stop()); CAMSTREAM = null; } }
 async function cam(m) {
   if (!navigator.mediaDevices?.getUserMedia) return toast('Камера недоступна', 'er');
-
-  // Автоподгрузка библиотеки ZXing при первом запуске сканера
   if (!window.ZXing) {
     toast('Загрузка модуля сканера...');
     try {
       await new Promise((res, rej) => {
         const s = document.createElement('script');
         s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.2/umd/index.min.js';
-        s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
       });
-    } catch (e) { 
-      return toast('Не удалось загрузить сканер — проверьте интернет', 'er'); 
-    }
+    } catch (e) { return toast('Не удалось загрузить сканер — проверьте интернет', 'er'); }
   }
-
-  $('#cam').hidden = false;
-  const reader = new ZXing.BrowserMultiFormatReader();
-  const c = { reader, on: 1, last: '', lt: 0 }; 
-  CB = c;
-  
+  clearTimeout(camIdle);
   try {
-    await reader.decodeFromConstraints({ video: { facingMode: 'environment' } }, 'cv', (res) => {
+    if (!CAMSTREAM || !CAMSTREAM.getVideoTracks().some(t => t.readyState === 'live'))
+      CAMSTREAM = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    $('#cam').hidden = false; // показываем окно только после получения доступа
+    const reader = new ZXing.BrowserMultiFormatReader();
+    const c = { reader, on: 1, last: '', lt: 0 }; CB = c;
+    // сканеру отдаём КОПИЮ дорожек: reader.reset() остановит копию, а исходный поток (и разрешение) останется
+    const copy = new MediaStream(CAMSTREAM.getVideoTracks().map(t => t.clone()));
+    await reader.decodeFromStream(copy, 'cv', res => {
       if (!c.on || !res) return;
       const x = res.getText();
-      // Защита от двойного сканирования (задержка 2.5 секунды)
       if (x !== c.last || Date.now() - c.lt > 2500) {
-        c.last = x; 
-        c.lt = Date.now();
-        // Нативная вибрация Telegram (работает на iOS и Android)
-        if (tg?.HapticFeedback) { tg.HapticFeedback.impactOccurred('light'); } 
-        else if (navigator.vibrate) { navigator.vibrate(50); }
+        c.last = x; c.lt = Date.now();
+        if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light'); else if (navigator.vibrate) navigator.vibrate(50);
         code(m, x);
       }
     });
   } catch (e) {
-    closeCam();
+    closeCam(); releaseCam();
     toast('Камера недоступна или доступ запрещён', 'er');
   }
 }
-
 function closeCam() {
   if (CB) {
-    CB.on = 0;
-    if (CB.reader) CB.reader.reset(); // Корректное отключение потока ZXing
-    CB = null;
+    CB.on = 0; try { CB.reader.reset(); } catch (e) {}
+    CB = null; clearTimeout(camIdle); camIdle = setTimeout(releaseCam, CAM_IDLE_MS);
   }
   const v = $('#cv'); if (v) v.srcObject = null;
   $('#cam').hidden = true;
