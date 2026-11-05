@@ -284,11 +284,12 @@ async function startApp() {
   if (!tg || !tg.initData) { $('#app').innerHTML = '<h1>Откройте в Telegram</h1><p class="mu">Приложение работает только внутри Telegram.</p>'; return; }
   try {
     const { data, error } = await sb.functions.invoke('auth-store', { body: { initData: tg.initData } });
-    if (error || !data || !data.store_id) throw new Error(error?.message || 'Ответ сервера: ' + JSON.stringify(data));
-    STORE = data.store_id;
-    USER = data.telegram_id ?? tg.initDataUnsafe?.user?.id ?? null;
-    // Если функция выдаёт токен — клиент работает от имени магазина (RLS). Без токена запросы идут с публичным ключом.
-    if (data.token) sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + data.token } } });
+    if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (e) {} throw new Error(m); }
+    if (!data || !data.store_id) throw new Error('Ответ сервера: ' + JSON.stringify(data));
+    if (!data.token) throw new Error('Сервер не выдал токен — обновите функцию auth-store');
+    STORE = data.store_id; USER = data.telegram_id;
+    // Клиент пересоздаётся с токеном: все запросы идут от имени магазина (работает RLS).
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + data.token } } });
     const { data: st } = await sb.from('stores').select('name,sub_status').eq('id', STORE).maybeSingle();
     if (st) {
       STORE_NAME = st.name || STORE_NAME;
