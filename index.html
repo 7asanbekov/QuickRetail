@@ -237,22 +237,59 @@ function hit(m, p) {
   else { const x = S.inv[p.id] || (S.inv[p.id] = { cnt: 0, cost: '' }); x.cnt++; }
   toast('+ ' + nm(p)); render();
 }
+
 async function cam(m) {
-  if (!('BarcodeDetector' in window)) return toast('Браузер не поддерживает сканер — введите код вручную', 'er');
   if (!navigator.mediaDevices?.getUserMedia) return toast('Камера недоступна', 'er');
-  let st; try { st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); } catch (e) { return toast('Камера недоступна', 'er'); }
-  const v = $('#cv'); v.srcObject = st; try { await v.play(); } catch (e) {}
+
+  // Автоподгрузка библиотеки ZXing при первом запуске сканера
+  if (!window.ZXing) {
+    toast('Загрузка модуля сканера...');
+    try {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.2/umd/index.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    } catch (e) { 
+      return toast('Не удалось загрузить сканер — проверьте интернет', 'er'); 
+    }
+  }
+
   $('#cam').hidden = false;
-  const c = { s: st, on: 1, last: '', lt: 0 }; CB = c;
-  let d; try { d = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'] }); } catch (e) { d = new BarcodeDetector(); }
-  const loop = async () => {
-    if (!c.on) return;
-    try { const r = await d.detect(v); if (r[0]) { const x = r[0].rawValue; if (x !== c.last || Date.now() - c.lt > 2500) { c.last = x; c.lt = Date.now(); navigator.vibrate && navigator.vibrate(50); code(m, x); } } } catch (e) {}
-    setTimeout(loop, 250);
-  };
-  loop();
+  const reader = new ZXing.BrowserMultiFormatReader();
+  const c = { reader, on: 1, last: '', lt: 0 }; 
+  CB = c;
+  
+  try {
+    await reader.decodeFromConstraints({ video: { facingMode: 'environment' } }, 'cv', (res) => {
+      if (!c.on || !res) return;
+      const x = res.getText();
+      // Защита от двойного сканирования (задержка 2.5 секунды)
+      if (x !== c.last || Date.now() - c.lt > 2500) {
+        c.last = x; 
+        c.lt = Date.now();
+        // Нативная вибрация Telegram (работает на iOS и Android)
+        if (tg?.HapticFeedback) { tg.HapticFeedback.impactOccurred('light'); } 
+        else if (navigator.vibrate) { navigator.vibrate(50); }
+        code(m, x);
+      }
+    });
+  } catch (e) {
+    closeCam();
+    toast('Камера недоступна или доступ запрещён', 'er');
+  }
 }
-function closeCam() { if (CB) { CB.on = 0; CB.s.getTracks().forEach(t => t.stop()); CB = null; } $('#cam').hidden = true; }
+
+function closeCam() {
+  if (CB) {
+    CB.on = 0;
+    if (CB.reader) CB.reader.reset(); // Корректное отключение потока ZXing
+    CB = null;
+  }
+  const v = $('#cv'); if (v) v.srcObject = null;
+  $('#cam').hidden = true;
+}
 
 // ---------- ТОВАРЫ ----------
 function pform(p, cb) {
