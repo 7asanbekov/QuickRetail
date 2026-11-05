@@ -284,7 +284,7 @@ async function startApp() {
   if (!tg || !tg.initData) { $('#app').innerHTML = '<h1>Откройте в Telegram</h1><p class="mu">Приложение работает только внутри Telegram.</p>'; return; }
   try {
     const { data, error } = await sb.functions.invoke('auth-store', { body: { initData: tg.initData } });
-    if (error || !data || !data.token) throw new Error(error?.message || 'Нет ответа от сервера авторизации');
+    if (error || !data || !data.token) throw new Error(error?.message || 'Ответ сервера: ' + JSON.stringify(data));
     STORE = data.store_id; USER = data.telegram_id;
     // Клиент пересоздаётся с токеном в заголовке: все запросы идут от имени магазина (работает RLS).
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + data.token } } });
