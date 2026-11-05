@@ -114,7 +114,6 @@ async function loadProducts(){
     if(!error&&data){db.products=data;if(S.tab==='prod'||S.tab==='home')render();}
     else if(error){console.error(error);toast('Ошибка загрузки каталога','er');}
 }
-loadProducts(); // Вызываем сразу при старте приложения
 
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
 const r2=n=>Math.round(n*100)/100,r4=n=>Math.round(n*1e4)/1e4;
