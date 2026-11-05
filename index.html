@@ -376,10 +376,19 @@ async function startApp() {
     
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + data.token } } });
     
-    // ДОБАВЛЕНО: Запрос роли из базы данных
-    const { data: userData } = await sb.from('users').select('role').eq('telegram_id', USER).maybeSingle();
-    if (userData && userData.role === 'cashier') {
-      document.body.classList.add('cashier-mode');
+    // ДИАГНОСТИКА РОЛИ
+    const TG_ID = tg?.initDataUnsafe?.user?.id || USER;
+    const { data: userData, error: roleErr } = await sb.from('users').select('role').eq('telegram_id', TG_ID).maybeSingle();
+    
+    if (roleErr) {
+      alert('Ошибка доступа (RLS) к users: ' + roleErr.message);
+    } else if (!userData) {
+      alert('База пуста для ID: ' + TG_ID + '. Проверьте таблицу users или права RLS.');
+    } else {
+      alert('База ответила! Ваша роль: ' + userData.role);
+      if (userData.role === 'cashier') {
+        document.body.classList.add('cashier-mode');
+      }
     }
 
     const { data: st } = await sb.from('stores').select('name,sub_status').eq('id', STORE).maybeSingle();
