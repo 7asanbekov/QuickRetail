@@ -1,7 +1,18 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8">
+<html lang="ru">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Магазин (SaaS Ready)</title>
+<script>
+// ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК: Исключает появление черного экрана при любой ошибке
+window.onerror = function(msg, url, line) {
+    document.documentElement.innerHTML = '<body style="background:#121615;color:#f87171;padding:20px;font-family:sans-serif;"><h2>Сбой интерфейса</h2><p>' + msg + '</p><p>Строка: ' + line + '</p><button onclick="localStorage.clear();location.reload()" style="padding:15px;background:#f87171;color:#fff;border:none;border-radius:10px;width:100%;">Сбросить кэш телефона</button></body>';
+};
+window.onunhandledrejection = function(e) {
+    document.documentElement.innerHTML = '<body style="background:#121615;color:#f87171;padding:20px;font-family:sans-serif;"><h2>Сбой сети/БД</h2><p>' + (e.reason?.message || e.reason) + '</p></body>';
+};
+</script>
 <style>
 :root{--bg:#f4f5f2;--cd:#fff;--tx:#1c2321;--mu:#68716d;--br:#dfe3de;--pr:#0f766e;--pt:#fff;--ok:#15803d;--er:#b42318;--wa:#b45309;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -39,42 +50,38 @@ nav button span{font-size:20px}nav button[data-t="sale"] span{font-size:26px}nav
 .sh{background:var(--bg);width:100%;max-width:640px;max-height:90%;overflow:auto;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px))}
 #cam{position:fixed;inset:0;background:#000;z-index:8;display:flex;flex-direction:column}#cam video{flex:1;min-height:0;width:100%;object-fit:cover}
 #cam div{padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));color:#fff;display:flex;gap:10px;align-items:center}#cam .f{color:#fff}
-#toast{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;padding:12px 14px;border-radius:12px;background:var(--tx);color:var(--bg);display:none;text-align:center}
+#toast{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;padding:12px 14px;border-radius:12px;background:var(--tx);color:var(--bg);display:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 textarea{width:100%;height:180px;border-radius:12px;border:1px solid var(--br);background:var(--cd);color:var(--tx);font:12px monospace;padding:8px}
 .bar{display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:14px}.t{overflow-x:auto}
 .sm{min-height:40px;font-size:14px;padding:0 10px}.gr{background:var(--ok);color:var(--pt);border-color:var(--ok)}.rd{background:var(--er);color:var(--pt);border-color:var(--er)}
 </style>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head><body>
-<div id="app"><div style="padding:20px;text-align:center;color:var(--mu);">Загрузка интерфейса...</div></div>
+</head>
+<body>
+<div id="app">
+    <div style="padding:40px 20px;text-align:center;color:var(--mu);">Подключение к серверу...</div>
+</div>
 <nav id="nav-menu" style="display:none;"><button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button><button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button><button data-t="buy" onclick="go('buy')"><span>📥</span>Закупка</button><button data-t="sale" onclick="go('sale')"><span>🛒</span>Продажа</button><button data-t="inv" onclick="go('inv')"><span>📋</span>Пересчёт</button><button data-t="rep" onclick="go('rep')"><span>📊</span>Отчёты</button></nav>
 <div id="cam" hidden><video id="cv" playsinline muted></video><div><span class="f" id="ct">Наведите на штрихкод</span><button onclick="closeCam()">Готово</button></div></div>
 <div class="ov" id="md" hidden><div class="sh" id="mb"></div></div><div id="toast" role="status"></div>
 
 <script>
-// ГЛОБАЛЬНЫЙ ПЕРЕХВАТ ОШИБОК ДЛЯ ПРЕДОТВРАЩЕНИЯ ЧЕРНОГО ЭКРАНА
-window.onerror = function(msg, url, line) {
-    document.getElementById('app').innerHTML = `<div style="padding:20px;color:red;"><b>Сбой кода:</b><br>${msg}<br>Строка: ${line}<br><button onclick="localStorage.clear();location.reload()" style="margin-top:15px;padding:10px;background:red;color:white;border-radius:8px;border:none;width:100%;">Сбросить кэш и починить</button></div>`;
-};
-window.onunhandledrejection = function(event) {
-    document.getElementById('app').innerHTML = `<div style="padding:20px;color:red;"><b>Сбой сети/БД:</b><br>${event.reason?.message || event.reason}</div>`;
-};
-
 try {
+    // 1. БАЗОВЫЕ НАСТРОЙКИ
     const tg = window.Telegram && window.Telegram.WebApp;
     if(tg){ tg.ready(); tg.expand(); }
 
-    if (!window.supabase) throw new Error("Не удалось загрузить библиотеку Supabase. Проверьте подключение к интернету.");
+    if (!window.supabase) throw new Error("Не удалось загрузить библиотеку БД. Проверьте интернет-соединение.");
 
     const SUPABASE_URL = 'https://zejpqdzashqaudcxdpoh.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_5FcwXPo1yU6BzYhmmfVQcA_DNv9U7ku'; 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const $=s=>document.querySelector(s),K='shop_saas_v2';
+    const $ = s => document.querySelector(s), K = 'shop_saas_v2';
     let STORE_ID = null, USER_ID = null;
 
-    // БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ БАЗЫ (Авто-починка старого кэша)
+    // 2. ИНИЦИАЛИЗАЦИЯ И ВОССТАНОВЛЕНИЕ КЭША
     let db=null;try{db=JSON.parse(localStorage.getItem(K))}catch(e){}
     db=db||{};
     db.stores = db.stores || [];
@@ -89,45 +96,14 @@ try {
     db.seq = db.seq || 0;
     db.inv = db.inv || null;
 
-    async function authenticate() {
-        if (!tg || !tg.initData) {
-            toast('Локальный режим: откройте из Telegram', 'er');
-            render(); 
-            return;
-        }
-        try {
-            const { data, error } = await supabase.functions.invoke('auth-store', {
-                body: { initData: tg.initData }
-            });
-            if (error || !data) throw new Error(error?.message || 'Нет ответа от сервера');
-            
-            STORE_ID = data.store_id;
-            USER_ID = data.telegram_id;
-            
-            await supabase.auth.setSession({ access_token: data.token, refresh_token: data.token });
-            toast('Авторизация успешна', 'ok');
-            await loadProducts();
-        } catch (e) {
-            console.error(e);
-            toast('Ошибка авторизации: ' + e.message, 'er');
-        } finally {
-            render();
-        }
-    }
-    authenticate();
-
-    async function loadProducts(){
-        const {data,error}=await supabase.from('products').select('*').eq('store_id',STORE_ID);
-        if(!error&&data){db.products=data;if(S.tab==='prod'||S.tab==='home')render();}
-        else if(error){console.error(error);toast('Ошибка загрузки каталога','er');}
-    }
-
     const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
     const r2=n=>Math.round(n*100)/100,r4=n=>Math.round(n*1e4)/1e4;
     const fmt=n=>r2(+n||0).toLocaleString('ru-RU')+' сом';
     const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const dk=t=>{const d=new Date(t);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
-    const today=()=>dk(Date.now()),P=id=>db.products.find(p=>p.id===id),nm=p=>p.name||p.barcode||p.code;
+    const today=()=>dk(Date.now());
+    const P=id=>db.products.find(p=>p.id===id);
+    const nm=p=>p.name||p.barcode||p.code;
     
     db.receipts.forEach(d=>{if((d.status||'ok')!=='ok'){d.status='cancelled';d.del=true}});
     db.purchases.forEach(d=>{if((d.status||'ok')!=='ok'){d.status='cancelled';d.del=true}});
@@ -135,15 +111,27 @@ try {
     
     const S={tab:'home',cart:[],pcart:[],from:today(),to:today(),df:'all',fix:null,pfix:null};
     let T=null,tmr;
-    function toast(m,k){const t=$('#toast');t.textContent=m;t.style.display='block';t.style.background=k==='er'?'var(--er)':k==='ok'?'var(--ok)':'var(--tx)';t.style.color=k?'#fff':'var(--bg)';clearTimeout(tmr);tmr=setTimeout(()=>t.style.display='none',k==='er'?3200:k==='ok'?1000:800)}
 
-    function tx(fn){const snap=JSON.stringify(db);try{fn();localStorage.setItem(K,JSON.stringify(db));return true}catch(e){db=JSON.parse(snap);toast('Не сохранилось: '+(e&&e.name==='QuotaExceededError'?'память браузера заполнена':e.message||e),'er');return false}}
+    // === ГЛОБАЛЬНАЯ ФУНКЦИЯ ЗАГРУЗКИ ТОВАРОВ (READ) ===
+    async function loadProducts(){
+        if(!STORE_ID) return;
+        const {data, error} = await supabase.from('products').select('*').eq('store_id', STORE_ID);
+        if(!error && data) { 
+            db.products = data; 
+            if(S.tab==='prod'||S.tab==='home') render();
+        } else { 
+            toast('Ошибка каталога', 'er'); 
+            console.error(error);
+        }
+    }
+
+    // 3. ФУНКЦИИ ИНТЕРФЕЙСА
+    function toast(m,k){const t=$('#toast');t.textContent=m;t.style.display='block';t.style.background=k==='er'?'var(--er)':k==='ok'?'var(--ok)':'var(--tx)';t.style.color=k?'#fff':'var(--bg)';clearTimeout(tmr);tmr=setTimeout(()=>t.style.display='none',k==='er'?3500:k==='ok'?1500:1000)}
+    function tx(fn){const snap=JSON.stringify(db);try{fn();localStorage.setItem(K,JSON.stringify(db));return true}catch(e){db=JSON.parse(snap);toast('Память заполнена или сбой','er');return false}}
+    
     const wavg=(s,a,q,v)=>s<=0?r4(v/q):r4((s*a+v)/(s+q));
-
     const mv=(p,type,d,cost,src)=>db.stock_movements.push({id:uid(), store_id:STORE_ID, product_id:p.id, type, quantity:d, after:p.stock, cost, src, created_at:Date.now()});
-
-    const find=q=>{q=q.trim();if(!q)return[];const l=q.toLowerCase(),A=db.products.filter(p=>p.active);
-    let a=A.filter(p=>p.barcode===q);if(a.length)return a;a=A.filter(p=>p.code.toLowerCase()===l);if(a.length)return a;return A.filter(p=>(p.name||'').toLowerCase().includes(l))};
+    const find=q=>{q=q.trim();if(!q)return[];const l=q.toLowerCase(),A=db.products.filter(p=>p.active);let a=A.filter(p=>p.barcode===q);if(a.length)return a;a=A.filter(p=>p.code.toLowerCase()===l);if(a.length)return a;return A.filter(p=>(p.name||'').toLowerCase().includes(l))};
 
     function sum(f,t){const o={n:0,rev:0,cost:0,gp:0,u:0,by:{}};
     db.receipts.forEach(s=>{
@@ -162,30 +150,32 @@ try {
     const prow=p=>`<div class="c r" onclick="edit('${p.id}')" style="cursor:pointer">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode||p.code)}${p.v>1?' · вариант '+p.v:''}</small></div><div style="text-align:right"><b class="${p.stock<=p.low?'lo':''}">${p.stock} шт</b><br><small>${p.price==null?'без цены':fmt(p.price)}</small></div></div>`;
     const scanbar=m=>`<div class="sb"><input id="sq" placeholder="Штрихкод, код или название" inputmode="search" onkeydown="if(event.key==='Enter')look('${m}')"><button onclick="look('${m}')">Найти</button><button aria-label="Камера" onclick="cam('${m}')">📷</button></div>`;
 
+    const JK={sale:'s',buy:'p',inv:'i'},JT={s:'Продажи',p:'Закупки',i:'Пересчёты'};
     const V={
-    home(){const a=sum(today(),today()),low=db.products.filter(p=>p.active&&p.stock<=p.low);
-    return `<h1>Сегодня</h1><div class="g"><div class="c w"><small>Продажи</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div>
-    <div class="row"><button onclick="localStorage.removeItem('shop_saas_v2');location.reload()" style="background:var(--er);color:#fff;border-color:var(--er)">Сбросить БД</button></div>
-    <h2>Заканчивается</h2>${low.map(prow).join('')}`},
-    sale(){let t=0;const h=S.cart.map((l,i)=>{const p=P(l.pid);t+=l.q*(+l.price||0);return `<div class="c"><div class="r">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small class="${avail(p)<l.q?'lo':''}">остаток ${avail(p)}</small></div><button class="x" aria-label="Убрать" onclick="S.cart.splice(${i},1);render()">✕</button></div>
-    <div class="r" style="margin-top:8px"><button class="x" onclick="sq(${i},-1)">−</button><b class="q">${l.q}</b><button class="x" onclick="sq(${i},1)">+</button><input class="pi" inputmode="decimal" aria-label="Цена" value="${esc(l.price)}" onchange="S.cart[${i}].price=this.value;render()"><span class="lt">${fmt(l.q*(+l.price||0))}</span></div>
-    ${l.price!==''&&+l.price!==p.price?`<a onclick="defp(${i})">Сделать ценой по умолчанию (${fmt(l.price)})</a>`:''}</div>`}).join('');
-    return banner()+scanbar('sale')+(h?h+`<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>`:'')},
-    buy(){let n=0,u=0,t=0;const h=S.pcart.map((l,i)=>{const p=P(l.pid);n++;u+=+l.q||0;t+=(+l.q||0)*(+l.cost||0);return `<div class="c"><div class="r">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>остаток ${p.stock}${p.last!=null?' · прошлая цена '+fmt(p.last):''}</small></div><button class="x" aria-label="Убрать" onclick="S.pcart.splice(${i},1);render()">✕</button></div>
-    <div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Закупочная цена за шт<input inputmode="decimal" value="${esc(l.cost)}" onchange="S.pcart[${i}].cost=this.value;render()"></label><label style="flex:1;margin:0">Кол-во<input inputmode="numeric" value="${esc(l.q)}" onchange="S.pcart[${i}].q=this.value;render()"></label></div></div>`}).join('');
-    return pbanner()+scanbar('buy')+(h?h+`<div class="c"><div class="bar"><span>Позиций</span><b>${n}</b></div><div class="bar"><span>Штук</span><b>${u}</b></div><div class="bar"><span>Сумма закупки</span><b>${fmt(t)}</b></div></div><button class="pb big" onclick="buyAsk()">Подтвердить закупку</button><div class="row"><button onclick="ask('Очистить закупку? Остатки не изменятся.',()=>{S.pcart=[];render()})">Отменить</button></div>`:'')},
-    prod(){return `<h1>Товары</h1><div class="row"><button class="pb" onclick="pform({})">Новый товар</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`},
-    inv(){const v=db.inv;if(!v)return `<h1>Пересчёт</h1><div class="row"><button class="pb" onclick="invStart('initial')">Начальный</button><button class="pb" onclick="invStart('regular')">Обычный</button></div>`;
-    const it=Object.entries(v.items);return `<h1>${v.type==='initial'?'Начальный пересчёт':'Пересчёт'}</h1>`+scanbar('inv')+(it.length?it.map(([id,x])=>{const p=P(id),d=x.cnt-x.book;return `<div class="c"><div class="r">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>по учёту ${x.book} шт</small></div><b class="${d<0?'lo':d>0?'wa':'ok'}">${d>0?'+':''}${d}</b></div><div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Посчитано<input inputmode="numeric" value="${x.cnt}" onchange="setc('${id}',this.value)"></label>${v.type==='initial'?`<label style="flex:1;margin:0">Цена закупки<input inputmode="decimal" value="${esc(x.cost)}" onchange="db.inv.items['${id}'].cost=this.value;tx(()=>0)"></label>`:''}<button class="x" aria-label="Убрать" onclick="delc('${id}')">✕</button></div></div>`}).join('')+`<button class="pb big" onclick="ask('Применить пересчёт? Остатки изменятся.',invOk)">Подтвердить пересчёт</button>`:'')+`<div class="row"><button onclick="ask('Удалить черновик пересчёта?',()=>{tx(()=>db.inv=null);render()})">Удалить черновик</button></div>`},
-    rep(){const a=sum(S.from,S.to),A=db.products.filter(p=>p.active),top=A.filter(p=>a.by[p.id]).sort((x,y)=>a.by[y.id].u-a.by[x.id].u),no=A.filter(p=>!a.by[p.id]);
-    const val=r2(A.reduce((s,p)=>s+p.stock*p.avg,0)),ss=db.receipts.filter(s=>!s.del&&dk(s.created_at)>=S.from&&dk(s.created_at)<=S.to).sort((x,y)=>y.created_at-x.created_at);
-    return `<h1>Отчёты</h1><div class="r"><label style="flex:1;margin:0">С<input type="date" value="${S.from}" onchange="S.from=this.value||today();render()"></label><label style="flex:1;margin:0">По<input type="date" value="${S.to}" onchange="S.to=this.value||today();render()"></label></div>
-    <div class="g" style="margin-top:10px"><div class="c w"><small>Выручка</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Себестоимость</small><b>${fmt(a.cost)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Маржа</small><b>${a.rev?r2(a.gp/a.rev*100):0}%</b></div><div class="c"><small>Продаж / штук</small><b>${a.n} / ${a.u}</b></div><div class="c w"><small>Средний чек</small><b>${fmt(a.n?a.rev/a.n:0)}</b></div></div>
-    <h2>Склад</h2><div class="c"><div class="bar"><span>Стоимость остатков</span><b>${fmt(val)}</b></div><div class="bar"><span>Мало на складе</span><b>${A.filter(p=>p.stock<=p.low).length} поз.</b></div></div>
-    <h2>Лучшие по штукам</h2>${top.slice(0,10).map(p=>`<div class="bar"><span>${esc(nm(p))}</span><b>${a.by[p.id].u} шт · ${fmt(a.by[p.id].rev)}</b></div>`).join('')||''}
-    <h2>Без продаж за период</h2>${no.slice(0,15).map(p=>`<div class="bar"><span>${esc(nm(p))}</span><b>${p.stock} шт</b></div>`).join('')||''}
-    <h2>Продажи</h2>${ss.map(s=>{const items=db.receipt_items.filter(i=>i.receipt_id===s.id); return `<div class="c" onclick="openDoc('${s.id}')" style="cursor:pointer"><div class="bar"><b>${new Date(s.created_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</b><b class="${s.status==='ok'?'':'lo'}">${s.status==='ok'?fmt(s.total_amount):'отменена'}</b></div><small>${items.map(i=>esc(nm(P(i.product_id)))+' ×'+i.quantity).join(', ')}</small></div>`}).join('')||''}
-    <div class="row"><button onclick="csv('s')">CSV продаж</button><button onclick="csv('k')">CSV склада</button></div>`}};
+        home(){const a=sum(today(),today()),low=db.products.filter(p=>p.active&&p.stock<=p.low);
+        return `<h1>Сегодня</h1><div class="g"><div class="c w"><small>Продажи</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div>
+        <div class="row"><button onclick="localStorage.removeItem('${K}');location.reload()" style="background:var(--er);color:#fff;border-color:var(--er)">Сбросить БД</button></div>
+        <h2>Заканчивается</h2>${low.map(prow).join('')}`},
+        sale(){let t=0;const h=S.cart.map((l,i)=>{const p=P(l.pid);t+=l.q*(+l.price||0);return `<div class="c"><div class="r">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small class="${avail(p)<l.q?'lo':''}">остаток ${avail(p)}</small></div><button class="x" aria-label="Убрать" onclick="S.cart.splice(${i},1);render()">✕</button></div>
+        <div class="r" style="margin-top:8px"><button class="x" onclick="sq(${i},-1)">−</button><b class="q">${l.q}</b><button class="x" onclick="sq(${i},1)">+</button><input class="pi" inputmode="decimal" aria-label="Цена" value="${esc(l.price)}" onchange="S.cart[${i}].price=this.value;render()"><span class="lt">${fmt(l.q*(+l.price||0))}</span></div>
+        ${l.price!==''&&+l.price!==p.price?`<a onclick="defp(${i})">Сделать ценой по умолчанию (${fmt(l.price)})</a>`:''}</div>`}).join('');
+        return banner()+scanbar('sale')+(h?h+`<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>`:'')},
+        buy(){let n=0,u=0,t=0;const h=S.pcart.map((l,i)=>{const p=P(l.pid);n++;u+=+l.q||0;t+=(+l.q||0)*(+l.cost||0);return `<div class="c"><div class="r">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>остаток ${p.stock}${p.last!=null?' · прошлая цена '+fmt(p.last):''}</small></div><button class="x" aria-label="Убрать" onclick="S.pcart.splice(${i},1);render()">✕</button></div>
+        <div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Закупочная цена за шт<input inputmode="decimal" value="${esc(l.cost)}" onchange="S.pcart[${i}].cost=this.value;render()"></label><label style="flex:1;margin:0">Кол-во<input inputmode="numeric" value="${esc(l.q)}" onchange="S.pcart[${i}].q=this.value;render()"></label></div></div>`}).join('');
+        return pbanner()+scanbar('buy')+(h?h+`<div class="c"><div class="bar"><span>Позиций</span><b>${n}</b></div><div class="bar"><span>Штук</span><b>${u}</b></div><div class="bar"><span>Сумма закупки</span><b>${fmt(t)}</b></div></div><button class="pb big" onclick="buyAsk()">Подтвердить закупку</button><div class="row"><button onclick="ask('Очистить закупку? Остатки не изменятся.',()=>{S.pcart=[];render()})">Отменить</button></div>`:'')},
+        prod(){return `<h1>Товары</h1><div class="row"><button class="pb" onclick="pform({})">Новый товар</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`},
+        inv(){const v=db.inv;if(!v)return `<h1>Пересчёт</h1><div class="row"><button class="pb" onclick="invStart('initial')">Начальный</button><button class="pb" onclick="invStart('regular')">Обычный</button></div>`;
+        const it=Object.entries(v.items);return `<h1>${v.type==='initial'?'Начальный пересчёт':'Пересчёт'}</h1>`+scanbar('inv')+(it.length?it.map(([id,x])=>{const p=P(id),d=x.cnt-x.book;return `<div class="c"><div class="r">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>по учёту ${x.book} шт</small></div><b class="${d<0?'lo':d>0?'wa':'ok'}">${d>0?'+':''}${d}</b></div><div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Посчитано<input inputmode="numeric" value="${x.cnt}" onchange="setc('${id}',this.value)"></label>${v.type==='initial'?`<label style="flex:1;margin:0">Цена закупки<input inputmode="decimal" value="${esc(x.cost)}" onchange="db.inv.items['${id}'].cost=this.value;tx(()=>0)"></label>`:''}<button class="x" aria-label="Убрать" onclick="delc('${id}')">✕</button></div></div>`}).join('')+`<button class="pb big" onclick="ask('Применить пересчёт? Остатки изменятся.',invOk)">Подтвердить пересчёт</button>`:'')+`<div class="row"><button onclick="ask('Удалить черновик пересчёта?',()=>{tx(()=>db.inv=null);render()})">Удалить черновик</button></div>`},
+        rep(){const a=sum(S.from,S.to),A=db.products.filter(p=>p.active),top=A.filter(p=>a.by[p.id]).sort((x,y)=>a.by[y.id].u-a.by[x.id].u),no=A.filter(p=>!a.by[p.id]);
+        const val=r2(A.reduce((s,p)=>s+p.stock*p.avg,0)),ss=db.receipts.filter(s=>!s.del&&dk(s.created_at)>=S.from&&dk(s.created_at)<=S.to).sort((x,y)=>y.created_at-x.created_at);
+        return `<h1>Отчёты</h1><div class="r"><label style="flex:1;margin:0">С<input type="date" value="${S.from}" onchange="S.from=this.value||today();render()"></label><label style="flex:1;margin:0">По<input type="date" value="${S.to}" onchange="S.to=this.value||today();render()"></label></div>
+        <div class="g" style="margin-top:10px"><div class="c w"><small>Выручка</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Себестоимость</small><b>${fmt(a.cost)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Маржа</small><b>${a.rev?r2(a.gp/a.rev*100):0}%</b></div><div class="c"><small>Продаж / штук</small><b>${a.n} / ${a.u}</b></div><div class="c w"><small>Средний чек</small><b>${fmt(a.n?a.rev/a.n:0)}</b></div></div>
+        <h2>Склад</h2><div class="c"><div class="bar"><span>Стоимость остатков</span><b>${fmt(val)}</b></div><div class="bar"><span>Мало на складе</span><b>${A.filter(p=>p.stock<=p.low).length} поз.</b></div></div>
+        <h2>Лучшие по штукам</h2>${top.slice(0,10).map(p=>`<div class="bar"><span>${esc(nm(p))}</span><b>${a.by[p.id].u} шт · ${fmt(a.by[p.id].rev)}</b></div>`).join('')||''}
+        <h2>Без продаж за период</h2>${no.slice(0,15).map(p=>`<div class="bar"><span>${esc(nm(p))}</span><b>${p.stock} шт</b></div>`).join('')||''}
+        <h2>Продажи</h2>${ss.map(s=>{const items=db.receipt_items.filter(i=>i.receipt_id===s.id); return `<div class="c" onclick="openDoc('${s.id}')" style="cursor:pointer"><div class="bar"><b>${new Date(s.created_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</b><b class="${s.status==='ok'?'':'lo'}">${s.status==='ok'?fmt(s.total_amount):'отменена'}</b></div><small>${items.map(i=>esc(nm(P(i.product_id)))+' ×'+i.quantity).join(', ')}</small></div>`}).join('')||''}
+        <div class="row"><button onclick="csv('s')">CSV продаж</button><button onclick="csv('k')">CSV склада</button></div>`}
+    };
 
     function render(){
         document.getElementById('nav-menu').style.display = 'flex';
@@ -246,6 +236,7 @@ try {
     <div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="psave('${p.id||''}')">Сохранить</button></div>`)}
     function photo(inp){const f=inp.files[0];if(!f)return;if(!/^image\//.test(f.type)||f.size>20e6)return toast('Нужна картинка до 20 МБ','er');const im=new Image(),u=URL.createObjectURL(f);im.onload=()=>{const k=Math.min(1,260/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);T.photo=c.toDataURL('image/jpeg',.65);URL.revokeObjectURL(u);$('#pp').innerHTML=`<img class="th" src="${T.photo}" alt="">`};im.onerror=()=>toast('Не удалось прочитать фото','er');im.src=u}
 
+    // === СОЗДАНИЕ И ОБНОВЛЕНИЕ ТОВАРОВ В ОБЛАКЕ ===
     async function psave(id,force){
         const n=$('#fn').value.trim(),b=$('#fb').value.trim(),pr=$('#fp').value.trim().replace(',','.');
         if(pr!==''&&!(+pr>=0))return toast('Цена указана неверно','er');
@@ -275,13 +266,13 @@ try {
 
         closeModal();
         toast('Товар сохранён', 'ok');
-        await loadProducts(); 
-        cb ? cb(p) : render();
+        await loadProducts(); // Сразу же перезагружаем каталог с сервера!
+        cb ? cb(p) : render(); // Перерисовываем интерфейс
     }
 
     let CB=null;
-    async function cam(m){if(!('BarcodeDetector'in window))return toast('Этот браузер не умеет сканировать камерой. Введите код вручную (на Android лучше Chrome).','er');if(!navigator.mediaDevices?.getUserMedia)return toast('Камера недоступна: нужна защищённая страница (https).','er');
-    let st;try{st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})}catch(e){return toast(e.name==='NotAllowedError'?'Доступ к камере запрещён. Разрешите камеру в настройках браузера или введите код вручную.':'Камера недоступна ('+e.name+'). Введите код вручную.','er')}
+    async function cam(m){if(!('BarcodeDetector'in window))return toast('Браузер не поддерживает камеру','er');if(!navigator.mediaDevices?.getUserMedia)return toast('Камера недоступна','er');
+    let st;try{st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})}catch(e){return toast('Камера недоступна','er')}
     const v=$('#cv');v.srcObject=st;try{await v.play()}catch(e){}$('#cam').hidden=false;const c={s:st,on:1,last:'',lt:0};CB=c;let d;try{d=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code']})}catch(e){d=new BarcodeDetector()}
     const loop=async()=>{if(!c.on)return;try{const r=await d.detect(v);if(r[0]){const x=r[0].rawValue;if(x!==c.last||Date.now()-c.lt>2500){c.last=x;c.lt=Date.now();navigator.vibrate&&navigator.vibrate(50);code(m,x)}}}catch(e){}setTimeout(loop,250)};loop()}
     function closeCam(){if(CB){CB.on=0;CB.s.getTracks().forEach(t=>t.stop());CB=null}$('#cam').hidden=true}
@@ -296,7 +287,7 @@ try {
     const docsAll=()=>Object.keys(KIND).flatMap(k=>db[KIND[k][1]].map((d,i)=>({k,d,num:d.n||i+1})));
     const allDocs=()=>docsAll().sort((a,b)=>b.d.created_at-a.d.created_at);
     const findDoc=id=>docsAll().find(x=>x.d.id===id);
-    const JK={sale:'s',buy:'p',inv:'i'},JT={s:'Продажи',p:'Закупки',i:'Пересчёты'};
+    
     function dcard(x){const d=x.d,tv=x.k==='s'?d.total_amount:d.total;return `<div class="c" onclick="openDoc('${d.id}')" style="cursor:pointer;${d.del?'opacity:.55':''}"><div class="bar"><b>${KIND[x.k][0]} № ${x.num}</b><b class="${d.del?'lo':''}">${d.del?'помечен на удаление':x.k==='i'?(d.type==='initial'?'начальный':'обычный'):fmt(tv)}</b></div><small>${new Date(d.created_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}${d.fixOf?' · исправляет № '+d.fixOf:''}</small></div>`}
     function journal(k){let L=allDocs().filter(x=>x.k===k);const td=today();if(!S.jall)L=L.filter(x=>dk(x.d.created_at)===td);
     return `<h2>${JT[k]} ${S.jall?'(все)':'за сегодня'}</h2>`+(L.slice(0,60).map(dcard).join('')||'')+`<div class="row"><button onclick="S.jall=!S.jall;render()">${S.jall?'Только сегодня':'Показать все'}</button></div>`}
@@ -324,15 +315,43 @@ try {
     else if(k==='p'){revBuy(d,1);dropMv(id);d.items=rows.map(r=>({pid:d.items[r.i].pid,q:r.q,cost:r2(r.p)}));d.total=r2(d.items.reduce((a,t)=>a+t.q*t.cost,0));postBuy(d);d.items.forEach(t=>P(t.pid).last=t.cost)}
     else{revInv(d,1);dropMv(id);d.items=rows.map(r=>{const t=d.items[r.i];return{...t,cnt:r.q,delta:r.q-t.book}});postInv(d)}
     d.edited_at=Date.now()})){closeModal();toast('Документ исправлен','ok');render()}}
-
     function csv(k){const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';let rows;
     if(k==='s'){rows=[['Дата','Товар','Кол-во','Цена','Себестоимость за шт','Прибыль']];db.receipts.forEach(s=>{const d=dk(s.created_at);if(s.status==='ok'&&d>=S.from&&d<=S.to){db.receipt_items.filter(i=>i.receipt_id===s.id).forEach(i=>rows.push([d,nm(P(i.product_id)),i.quantity,i.price_at_sale,i.cost_at_sale,r2(i.quantity*(i.price_at_sale-i.cost_at_sale))]))}})}
     else{rows=[['Код','Штрихкод','Товар','Остаток','Ср. себестоимость','Стоимость']];db.products.forEach(p=>rows.push([p.code,p.barcode||'',nm(p),p.stock,p.avg,r2(p.stock*p.avg)]))}
     const t=rows.map(r=>r.map(q).join(';')).join('\n');modal(`<h2>CSV (открывается в Excel)</h2><textarea id="ct2" readonly>${esc(t)}</textarea><div class="row"><button onclick="closeModal()">Закрыть</button><button class="pb" onclick="cp()">Копировать</button></div>`)}
     function cp(){const t=$('#ct2');t.select();(navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).then(()=>toast('Скопировано','ok'),()=>{try{document.execCommand('copy')?toast('Скопировано','ok'):toast('Выделите текст и скопируйте вручную')}catch(e){toast('Выделите текст и скопируйте вручную')}})}
 
-} catch (e) {
-    document.getElementById('app').innerHTML = `<div style="padding:20px;color:red;"><b>Критический сбой:</b><br>${e.message}<br><button onclick="localStorage.clear();location.reload()" style="margin-top:15px;padding:10px;background:red;color:white;border-radius:8px;border:none;width:100%;">Сбросить кэш и починить</button></div>`;
+    // 4. ЗАПУСК И АВТОРИЗАЦИЯ
+    async function startApp() {
+        if (!tg || !tg.initData) {
+            toast('Только локальный режим. Откройте в Telegram.', 'er');
+            render();
+            return;
+        }
+        try {
+            const { data, error } = await supabase.functions.invoke('auth-store', { body: { initData: tg.initData } });
+            if (error || !data) throw new Error(error?.message || 'Нет ответа от сервера авторизации');
+            
+            STORE_ID = data.store_id;
+            USER_ID = data.telegram_id;
+            
+            await supabase.auth.setSession({ access_token: data.token, refresh_token: data.token });
+            toast('Авторизация успешна', 'ok');
+            
+            await loadProducts(); // Загружаем каталог сразу после успешного логина
+
+        } catch (e) {
+            toast('Ошибка авторизации: ' + e.message, 'er');
+        } finally {
+            render(); // Отрисовываем интерфейс в любом случае
+        }
+    }
+
+    startApp();
+
+} catch(e) {
+    document.documentElement.innerHTML = '<body style="background:#121615;color:#f87171;padding:20px;font-family:sans-serif;"><h2>Глобальный сбой</h2><p>' + e.message + '</p><button onclick="localStorage.clear();location.reload()" style="padding:15px;background:#f87171;color:#fff;border:none;border-radius:10px;width:100%;">Сбросить кэш телефона</button></body>';
 }
 </script>
-</body></html>
+</body>
+</html>
