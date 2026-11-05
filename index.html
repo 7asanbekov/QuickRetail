@@ -228,19 +228,15 @@ function look(m) { const e = $('#sq'), v = e.value; e.value = ''; code(m, v); }
 function code(m, v) {
   v = v.trim(); if (!v) return;
   const l = find(v);
+  if (!l.length) { closeCam(); return pform(/^\d{6,}$/.test(v) ? { barcode: v } : { name: v }, p => hit(m, p)); }
   
-  // Если не найдено - открываем форму создания
-  if (!l.length) { 
-      return pform(/^\d{6,}$/.test(v) ? { barcode: v } : { name: v }, p => hit(m, p)); 
-  }
-  
-  // Если найден ровно один товар - сразу добавляем (сканер к этому моменту уже закроется)
+  // ДОБАВЛЕНО: Закрываем камеру, если товар найден в базе
   if (l.length === 1) { 
+      closeCam(); 
       return hit(m, l[0]); 
   }
   
-  // Если найдено несколько - показываем выбор
-  T = { l, cb: p => hit(m, p) };
+  closeCam(); T = { l, cb: p => hit(m, p) };
   modal('<h2>Выберите товар</h2>' + l.map((p, i) => `<div class="c r" onclick="closeModal();T.cb(T.l[${i}])" style="cursor:pointer"><div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><b>${p.stock_quantity} шт</b></div>`).join(''));
 }
 
