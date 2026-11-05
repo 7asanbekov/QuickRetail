@@ -165,13 +165,16 @@ const V = {
     }).join('') + (it.length ? `<button class="pb big" onclick="ask('Применить сверку остатков? Остатки изменятся.',invOk)">Подтвердить сверку</button>` : '') + journal('i');
   },
   async rep() {
-    const a = await stats(S.from, S.to), val = r2(P.reduce((s, p) => s + p.stock_quantity * (+p.cost_price || 0), 0));
-    const top = Object.entries(a.by).sort((x, y) => y[1].u - x[1].u).slice(0, 10);
+    const a = await stats(S.from, S.to);
     return `<h1>Отчёты</h1><div class="r"><label style="flex:1;margin:0">С<input type="date" value="${S.from}" onchange="S.from=this.value||today();render()"></label><label style="flex:1;margin:0">По<input type="date" value="${S.to}" onchange="S.to=this.value||today();render()"></label></div>
-    <div class="g" style="margin-top:10px"><div class="c w"><small>Выручка</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Себестоимость</small><b>${fmt(a.cost)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Маржа</small><b>${a.rev ? r2(a.gp / a.rev * 100) : 0}%</b></div><div class="c"><small>Продаж / штук</small><b>${a.n} / ${a.u}</b></div><div class="c w"><small>Средний чек</small><b>${fmt(a.n ? a.rev / a.n : 0)}</b></div></div>
-    <h2>Склад</h2><div class="c"><div class="bar"><span>Стоимость остатков</span><b>${fmt(val)}</b></div><div class="bar"><span>Мало на складе</span><b>${P.filter(p => p.stock_quantity <= LOW).length} поз.</b></div></div>
-    <h2>Лучшие по штукам</h2>${top.map(([id, x]) => `<div class="bar"><span>${esc(nm(G(id)))}</span><b>${x.u} шт · ${fmt(x.rev)}</b></div>`).join('') || '<p class="mu">Нет продаж</p>'}
-    <h2>Продажи</h2>${a.list.slice(0, 100).map(s => `<div class="c"><div class="bar"><b>${new Date(s.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</b><b>${fmt(s.total_amount)}</b></div><small>${(s.receipt_items || []).map(i => esc(nm(G(i.product_id))) + ' ×' + i.quantity).join(', ')}</small></div>`).join('')}`;
+    <div class="g" style="margin-top:10px">
+      <div class="c w"><small>Выручка</small><b>${fmt(a.rev)}</b></div>
+      <div class="c"><small>Себестоимость</small><b>${fmt(a.cost)}</b></div>
+      <div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div>
+      <div class="c"><small>Маржа</small><b>${a.rev ? r2(a.gp / a.rev * 100) : 0}%</b></div>
+      <div class="c"><small>Продаж / штук</small><b>${a.n} / ${a.u}</b></div>
+      <div class="c w"><small>Средний чек</small><b>${fmt(a.n ? a.rev / a.n : 0)}</b></div>
+    </div>`;
   }
 };
 
