@@ -38,13 +38,14 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 #cam div{padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));color:#fff;display:flex;gap:10px;align-items:center}
 #toast{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;padding:12px 14px;border-radius:12px;display:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 .bar{display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:14px}
+.gr{background:var(--ok);color:var(--pt);border-color:var(--ok)}.rd{background:var(--er);color:var(--pt);border-color:var(--er)}
 </style>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
 <body>
 <div id="app"><p class="mu" style="text-align:center;padding-top:40px">Подключение к серверу...</p></div>
-<nav id="nav"><button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button><button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button><button data-t="buy" onclick="go('buy')"><span>📥</span>Закупка</button><button data-t="sale" onclick="go('sale')"><span>🛒</span>Продажа</button><button data-t="inv" onclick="go('inv')"><span>📋</span>Пересчёт</button><button data-t="rep" onclick="go('rep')"><span>📊</span>Отчёты</button></nav>
+<nav id="nav"><button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button><button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button><button data-t="buy" onclick="go('buy')"><span>📥</span>Закупка</button><button data-t="sale" onclick="go('sale')"><span>🛒</span>Продажа</button><button data-t="inv" onclick="go('inv')"><span>📋</span>Сверка</button><button data-t="rep" onclick="go('rep')"><span>📊</span>Отчёты</button></nav>
 <div id="cam" hidden><video id="cv" playsinline muted></video><div><span class="f">Наведите на штрихкод</span><button onclick="closeCam()">Готово</button></div></div>
 <div class="ov" id="md" hidden><div class="sh" id="mb"></div></div><div id="toast" role="status"></div>
 
@@ -68,7 +69,7 @@ const today = () => dk(Date.now());
 const G = id => P.find(p => p.id === id);
 const nm = p => p ? (p.name || p.barcode || 'Без названия') : '(удалён)';
 const num = v => { v = String(v ?? '').trim().replace(',', '.'); if (v === '') return 0; return +v >= 0 ? r2(+v) : false; };
-const S = { tab: 'home', cart: [], pcart: [], inv: {}, from: today(), to: today() };
+const S = { docs: {}, tab: 'home', cart: [], pcart: [], inv: {}, from: today(), to: today() };
 
 addEventListener('error', e => toast(e.message, 'er'));
 addEventListener('unhandledrejection', e => toast(e.reason?.message || String(e.reason), 'er'));
@@ -108,7 +109,7 @@ async function stats(f, t) {
   const a = new Date(f + 'T00:00:00').toISOString(), b = new Date(t + 'T23:59:59.999').toISOString();
   const { data, error } = await sb.from('receipts')
     .select('id,total_amount,total_cogs,created_at,receipt_items(product_id,quantity,price_at_sale)')
-    .eq('store_id', STORE).gte('created_at', a).lte('created_at', b).order('created_at', { ascending: false }).limit(1000);
+    .eq('store_id', STORE).eq('deleted', false).gte('created_at', a).lte('created_at', b).order('created_at', { ascending: false }).limit(1000);
   if (error) throw error;
   const o = { n: data.length, rev: 0, cost: 0, u: 0, by: {}, list: data };
   data.forEach(s => {
@@ -146,7 +147,7 @@ const V = {
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small class="${p && p.stock_quantity < l.q ? 'lo' : ''}">остаток ${p ? p.stock_quantity : 0}</small></div><button class="x" aria-label="Убрать" onclick="S.cart.splice(${i},1);render()">✕</button></div>
       <div class="r" style="margin-top:8px"><button class="x" onclick="sq(${i},-1)">−</button><b class="q">${l.q}</b><button class="x" onclick="sq(${i},1)">+</button><input class="pi" inputmode="decimal" aria-label="Цена" value="${esc(l.price)}" onchange="S.cart[${i}].price=this.value.replace(',','.');render()"><span class="lt">${fmt(l.q * (+l.price || 0))}</span></div></div>`;
     }).join('');
-    return scanbar('sale') + (h ? h + `<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>` : '') + recentHtml();
+    return scanbar('sale') + (h ? h + `<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>` : '') + journal('s');
   },
   buy() {
     let u = 0, t = 0;
@@ -155,15 +156,15 @@ const V = {
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small>остаток ${p ? p.stock_quantity : 0}${p && p.cost_price ? ' · себестоимость ' + fmt(p.cost_price) : ''}</small></div><button class="x" aria-label="Убрать" onclick="S.pcart.splice(${i},1);render()">✕</button></div>
       <div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Закупочная цена за шт<input inputmode="decimal" value="${esc(l.cost)}" onchange="S.pcart[${i}].cost=this.value.replace(',','.');render()"></label><label style="flex:1;margin:0">Кол-во<input inputmode="numeric" value="${esc(l.q)}" onchange="S.pcart[${i}].q=this.value;render()"></label></div></div>`;
     }).join('');
-    return scanbar('buy') + (h ? h + `<div class="c"><div class="bar"><span>Позиций / штук</span><b>${S.pcart.length} / ${u}</b></div><div class="bar"><span>Сумма закупки</span><b>${fmt(t)}</b></div></div><button class="pb big" onclick="buyAsk()">Подтвердить закупку</button>` : '');
+    return scanbar('buy') + (h ? h + `<div class="c"><div class="bar"><span>Позиций / штук</span><b>${S.pcart.length} / ${u}</b></div><div class="bar"><span>Сумма закупки</span><b>${fmt(t)}</b></div></div><button class="pb big" onclick="buyAsk()">Подтвердить закупку</button>` : '') + journal('p');
   },
   inv() {
     const it = Object.entries(S.inv);
-    return `<h1>Пересчёт</h1>` + scanbar('inv') + it.map(([id, x]) => {
+    return `<h1>Сверка остатков</h1>` + scanbar('inv') + it.map(([id, x]) => {
       const p = G(id), d = x.cnt - p.stock_quantity;
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small>по учёту ${p.stock_quantity} шт</small></div><b class="${d < 0 ? 'lo' : d > 0 ? 'wa' : 'ok'}">${d > 0 ? '+' : ''}${d}</b></div>
       <div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Посчитано<input inputmode="numeric" value="${x.cnt}" onchange="setc('${id}',this.value)"></label>${p.stock_quantity <= 0 ? `<label style="flex:1;margin:0">Закупочная цена<input inputmode="decimal" value="${esc(x.cost)}" onchange="S.inv['${id}'].cost=this.value.replace(',','.')"></label>` : ''}<button class="x" aria-label="Убрать" onclick="delete S.inv['${id}'];render()">✕</button></div></div>`;
-    }).join('') + (it.length ? `<button class="pb big" onclick="ask('Применить пересчёт? Остатки изменятся.',invOk)">Подтвердить пересчёт</button>` : '');
+    }).join('') + (it.length ? `<button class="pb big" onclick="ask('Применить сверку остатков? Остатки изменятся.',invOk)">Подтвердить сверку</button>` : '') + journal('i');
   },
   async rep() {
     const a = await stats(S.from, S.to), val = r2(P.reduce((s, p) => s + p.stock_quantity * (+p.cost_price || 0), 0));
@@ -184,14 +185,41 @@ async function render() {
   $('#app').innerHTML = h;
   if (t === 'prod') plist();
 }
-function go(t) { closeCam(); S.tab = t; render().catch(e => toast(e.message, 'er')); if (t === 'sale') loadRecent().then(render).catch(e => toast(e.message, 'er')); scrollTo(0, 0); }
+function go(t) { closeCam(); S.tab = t; render().catch(e => toast(e.message, 'er')); if (TK[t]) loadDocs(TK[t]).then(render).catch(e => toast(e.message, 'er')); scrollTo(0, 0); }
 function plist() {
   const q = ($('#ps')?.value || '').toLowerCase();
   $('#pl').innerHTML = P.filter(p => !q || (p.name || '').toLowerCase().includes(q) || (p.barcode || '').includes(q)).map(row).join('');
 }
 
-async function loadRecent() { S.recent = (await stats(today(), today())).list; }
-const recentHtml = () => S.recent ? '<h2>Продажи за сегодня</h2>' + (S.recent.map(s => `<div class="c"><div class="bar"><b>${new Date(s.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</b><b>${fmt(s.total_amount)}</b></div><small>${(s.receipt_items || []).map(i => esc(nm(G(i.product_id))) + ' ×' + i.quantity).join(', ')}</small></div>`).join('') || '<p class="mu">Пока нет продаж</p>') : '';
+const DK = { s: ['receipts', 'receipt_items(id,product_id,quantity,price_at_sale,cost_at_sale)', 'receipt_items'], p: ['purchases', 'purchase_items(id,product_id,quantity,cost)', 'purchase_items'], i: ['inventories', 'inventory_items(id,product_id,book_qty,counted_qty,delta,cost)', 'inventory_items'] };
+const DN = { s: 'Продажа', p: 'Закупка', i: 'Сверка' }, DT = { s: 'Продажи', p: 'Закупки', i: 'Сверки остатков' }, TK = { sale: 's', buy: 'p', inv: 'i' };
+async function loadDocs(k) {
+  let q = sb.from(DK[k][0]).select('*,' + DK[k][1]).eq('store_id', STORE).order('created_at', { ascending: false }).limit(S.jall ? 300 : 100);
+  if (!S.jall) q = q.gte('created_at', new Date(today() + 'T00:00:00').toISOString());
+  const { data, error } = await q; if (error) throw error;
+  S.docs[k] = data;
+}
+const journal = k => !S.docs[k] ? '' : `<h2>${DT[k]} ${S.jall ? '(все)' : 'за сегодня'}</h2>` + (S.docs[k].map(d => `<div class="c" onclick="openDoc('${k}','${d.id}')" style="cursor:pointer${d.deleted ? ';opacity:.55' : ''}"><div class="bar"><b>${DN[k]} № ${d.n ?? '—'}</b><b class="${d.deleted ? 'lo' : ''}">${d.deleted ? 'помечен на удаление' : k === 'i' ? d.inventory_items.length + ' поз.' : fmt(d.total_amount)}</b></div><small>${new Date(d.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small></div>`).join('') || '<p class="mu">Нет документов</p>') + `<div class="row"><button onclick="S.jall=!S.jall;loadDocs('${k}').then(render)">${S.jall ? 'Только сегодня' : 'Показать все'}</button></div>`;
+function openDoc(k, id) {
+  const d = S.docs[k].find(x => x.id === id), its = d[DK[k][2]], ed = !d.deleted;
+  const val = i => k === 'i' ? i.counted_qty : i.quantity, pv = i => k === 's' ? i.price_at_sale : i.cost;
+  const lines = its.map(i => {
+    const n = esc(nm(G(i.product_id)));
+    if (!ed) return k === 'i' ? `<div class="bar"><span>${n}</span><b>учёт ${i.book_qty} → факт ${i.counted_qty} (${i.delta > 0 ? '+' : ''}${i.delta})</b></div>` : `<div class="bar"><span>${n} × ${i.quantity} по ${fmt(pv(i))}</span><b>${fmt(i.quantity * pv(i))}</b></div>`;
+    return `<div class="ln" data-id="${i.id}" style="padding:8px 0;border-bottom:1px solid var(--br)"><div class="r"><div class="f"><b>${n}</b>${k === 'i' ? `<small>по учёту ${i.book_qty}</small>` : ''}</div><button class="x" aria-label="Убрать строку" onclick="this.closest('.ln').remove()">✕</button></div><div class="r" style="margin-top:6px"><label style="flex:1;margin:0">${k === 'i' ? 'Посчитано' : 'Кол-во'}<input class="iq" inputmode="numeric" value="${val(i)}"></label>${k === 'i' ? '' : `<label style="flex:1;margin:0">${k === 's' ? 'Цена' : 'Закупочная цена за шт'}<input class="ip" inputmode="decimal" value="${pv(i)}"></label>`}</div></div>`;
+  }).join('');
+  const sm = k === 's' ? `<div class="bar"><b>Итого</b><b>${fmt(d.total_amount)}</b></div><div class="bar"><span>Себестоимость</span><span>${fmt(d.total_cogs)}</span></div><div class="bar"><span>Валовая прибыль</span><span>${fmt(d.total_amount - d.total_cogs)}</span></div>` : k === 'p' ? `<div class="bar"><b>Итого</b><b>${fmt(d.total_amount)}</b></div>` : '';
+  modal(`<h2>${DN[k]} № ${d.n ?? '—'}</h2><small>${new Date(d.created_at).toLocaleString('ru-RU')}${d.deleted ? ' · помечен на удаление' : ''}</small><div class="c">${lines}${sm}</div><div class="row">${d.deleted ? `<button class="gr" onclick="markDoc('${k}','${id}',false)">Снять пометку</button>` : `<button class="gr" onclick="saveDoc('${k}','${id}')">Исправить</button><button class="rd" onclick="ask('Пометить на удаление? Остатки вернутся.',()=>markDoc('${k}','${id}',true))">Пометить на удаление</button>`}</div><button class="big" onclick="closeModal()">Закрыть</button>`);
+}
+function saveDoc(k, id) {
+  const rows = [...document.querySelectorAll('#mb .ln')].map(r => ({ id: r.dataset.id, q: parseInt(r.querySelector('.iq').value), p: r.querySelector('.ip') ? +String(r.querySelector('.ip').value).replace(',', '.') : 0 }));
+  if (!rows.length) return toast('В документе должна остаться хотя бы одна строка', 'er');
+  if (rows.some(r => !(r.q >= (k === 'i' ? 0 : 1)) || !(r.p >= 0))) return toast('Проверьте количество и цену', 'er');
+  run(async () => { const { error } = await sb.rpc('doc_edit', { p_kind: k, p_id: id, p_items: rows }); if (error) throw error; closeModal(); await load(); await loadDocs(k); toast('Документ исправлен', 'ok'); });
+}
+function markDoc(k, id, del) {
+  run(async () => { const { error } = await sb.rpc('doc_mark', { p_kind: k, p_id: id, p_deleted: del }); if (error) throw error; closeModal(); await load(); await loadDocs(k); toast(del ? 'Помечен на удаление' : 'Пометка снята', 'ok'); });
+}
 
 // ---------- ПОИСК / СКАНЕР ----------
 function look(m) { const e = $('#sq'), v = e.value; e.value = ''; code(m, v); }
@@ -232,21 +260,20 @@ function pform(p, cb) {
   modal(`<h2>${e ? 'Товар' : 'Новый товар'}</h2>
   <label>Название<input id="fn" value="${esc(p.name || '')}"></label>
   <label>Штрихкод<input id="fb" inputmode="numeric" value="${esc(p.barcode || '')}"></label>
-  <label>Закупочная цена, сом<input id="fc" inputmode="decimal" value="${p.cost_price || ''}"></label>
   <label>Цена продажи, сом<input id="fp" inputmode="decimal" value="${p.retail_price || ''}"></label>
-  ${e ? `<small>Остаток: ${p.stock_quantity} шт (меняется закупкой и пересчётом)</small>` : ''}
+  ${e ? `<small>Остаток: ${p.stock_quantity} шт (меняется закупкой и сверкой остатков)</small>` : ''}
   <div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="psave('${p.id || ''}')">Сохранить</button></div>`);
 }
 function psave(id) {
   run(async () => {
-    const n = $('#fn').value.trim(), b = $('#fb').value.trim(), c = num($('#fc').value), r = num($('#fp').value);
+    const n = $('#fn').value.trim(), b = $('#fb').value.trim(), r = num($('#fp').value);
     if (!n && !b) throw new Error('Укажите название или штрихкод');
-    if (c === false || r === false) throw new Error('Цена указана неверно');
+    if (r === false) throw new Error('Цена указана неверно');
     if (b && P.some(x => x.barcode === b && x.id !== id)) throw new Error('Такой штрихкод уже есть');
-    const row = { name: n || null, barcode: b || null, cost_price: c, retail_price: r };
+    const row = { name: n || null, barcode: b || null, retail_price: r };
     const cb = T && T.cb; let p = null;
     if (id) { const { error } = await sb.from('products').update(row).eq('id', id).eq('store_id', STORE); if (error) throw error; }
-    else { const { data, error } = await sb.from('products').insert({ ...row, store_id: STORE, stock_quantity: 0 }).select().single(); if (error) throw error; p = data; }
+    else { const { data, error } = await sb.from('products').insert({ ...row, store_id: STORE, stock_quantity: 0, cost_price: 0 }).select().single(); if (error) throw error; p = data; }
     closeModal(); await load(); toast('Товар сохранён', 'ok');
     if (cb && p) cb(G(p.id));
   });
@@ -260,25 +287,25 @@ function sell() {
   run(async () => {
     const { error } = await sb.rpc('sell', { p_store: STORE, p_user: USER, p_items: c.map(l => ({ id: l.id, q: l.q, price: +l.price })) });
     if (error) throw error;
-    S.cart = []; await load(); await loadRecent(); toast('Продажа сохранена', 'ok');
+    S.cart = []; await load(); await loadDocs('s'); toast('Продажа сохранена', 'ok');
   });
 }
 function buyAsk() {
   const c = S.pcart;
   if (c.some(l => l.cost === '' || !(+l.cost >= 0) || !(parseInt(l.q) > 0))) return toast('Укажите цену и количество для каждой позиции', 'er');
   ask('Подтвердить закупку? Остатки увеличатся.', () => run(async () => {
-    const { error } = await sb.rpc('receive', { p_store: STORE, p_items: c.map(l => ({ id: l.id, q: parseInt(l.q), cost: r2(+l.cost) })) });
+    const { error } = await sb.rpc('receive', { p_store: STORE, p_user: USER, p_items: c.map(l => ({ id: l.id, q: parseInt(l.q), cost: r2(+l.cost) })) });
     if (error) throw error;
-    S.pcart = []; await load(); toast('Закупка сохранена', 'ok');
+    S.pcart = []; await load(); await loadDocs('p'); toast('Закупка сохранена', 'ok');
   }));
 }
 function setc(id, v) { const n = parseInt(v); if (!(n >= 0)) return toast('Введите число 0 или больше', 'er'); S.inv[id].cnt = n; render(); }
 function invOk() {
   const it = Object.entries(S.inv).map(([id, x]) => ({ id, cnt: x.cnt, cost: x.cost === '' ? null : +x.cost }));
   run(async () => {
-    const { error } = await sb.rpc('adjust', { p_store: STORE, p_items: it });
+    const { error } = await sb.rpc('adjust', { p_store: STORE, p_user: USER, p_items: it });
     if (error) throw error;
-    S.inv = {}; await load(); toast('Пересчёт применён', 'ok');
+    S.inv = {}; await load(); await loadDocs('i'); toast('Сверка остатков применена', 'ok');
   });
 }
 
@@ -300,7 +327,7 @@ async function startApp() {
     }
     await load();
     await render();
-    toast('Вход выполнен · v4 · токен получен', 'ok');
+    toast('Вход выполнен', 'ok');
   } catch (e) {
     $('#app').innerHTML = `<h1>Ошибка входа</h1><p class="mu">${esc(e.message)}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
   }
