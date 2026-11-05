@@ -66,29 +66,35 @@ let STORE_ID = null;
 let USER_ID = null;
 
 async function authenticate() {
-    if (!tg.initData) return toast('Откройте приложение внутри Telegram', 'er');
+    if (!tg.initData) {
+        toast('Локальный режим: откройте из Telegram', 'er');
+        render(); 
+        return;
+    }
     
-    // 1. Отправляем данные Telegram в нашу Edge-функцию
-    const { data, error } = await supabase.functions.invoke('auth-store', {
-        body: { initData: tg.initData }
-    });
+    try {
+        const { data, error } = await supabase.functions.invoke('auth-store', {
+            body: { initData: tg.initData }
+        });
 
-    if (error || !data) return toast('Ошибка доступа. Вы не зарегистрированы.', 'er');
+        if (error || !data) throw new Error(error?.message || 'Нет ответа от сервера');
 
-    // 2. Получаем официальный токен и данные магазина
-    STORE_ID = data.store_id;
-    USER_ID = data.telegram_id;
-    
-    // 3. Авторизуем клиент Supabase этим токеном
-    await supabase.auth.setSession({
-        access_token: data.token,
-        refresh_token: data.token
-    });
+        STORE_ID = data.store_id;
+        USER_ID = data.telegram_id;
+        
+        await supabase.auth.setSession({
+            access_token: data.token,
+            refresh_token: data.token
+        });
 
-    toast('Авторизация успешна', 'ok');
-    
-    // 4. Загружаем товары только после успешной авторизации
-    await loadProducts();
+        toast('Авторизация успешна', 'ok');
+        await loadProducts();
+    } catch (e) {
+        console.error('Auth error:', e);
+        toast('Ошибка авторизации: ' + e.message, 'er');
+    } finally {
+        render(); // Гарантированно отрисовываем интерфейс, чтобы не было черного экрана
+    }
 }
 
 // Запускаем процесс при входе
