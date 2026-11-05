@@ -224,19 +224,54 @@ function markDoc(k, id, del) {
 
 // ---------- ПОИСК / СКАНЕР ----------
 function look(m) { const e = $('#sq'), v = e.value; e.value = ''; code(m, v); }
+
 function code(m, v) {
   v = v.trim(); if (!v) return;
   const l = find(v);
-  if (!l.length) { closeCam(); return pform(/^\d{6,}$/.test(v) ? { barcode: v } : { name: v }, p => hit(m, p)); }
   
-  // ДОБАВЛЕНО: Закрываем камеру, если товар найден в базе
+  // Если не найдено - открываем форму создания
+  if (!l.length) { 
+      return pform(/^\d{6,}$/.test(v) ? { barcode: v } : { name: v }, p => hit(m, p)); 
+  }
+  
+  // Если найден ровно один товар - сразу добавляем (сканер к этому моменту уже закроется)
   if (l.length === 1) { 
-      closeCam(); 
       return hit(m, l[0]); 
   }
   
-  closeCam(); T = { l, cb: p => hit(m, p) };
+  // Если найдено несколько - показываем выбор
+  T = { l, cb: p => hit(m, p) };
   modal('<h2>Выберите товар</h2>' + l.map((p, i) => `<div class="c r" onclick="closeModal();T.cb(T.l[${i}])" style="cursor:pointer"><div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><b>${p.stock_quantity} шт</b></div>`).join(''));
+}
+
+function hit(m, p) {
+  if (m === 'sale') { const l = S.cart.find(x => x.id === p.id); if (l) l.q++; else S.cart.push({ id: p.id, q: 1, price: p.retail_price || '' }); }
+  else if (m === 'buy') { const l = S.pcart.find(x => x.id === p.id); if (l) l.q = (+l.q || 0) + 1; else S.pcart.push({ id: p.id, q: 1, cost: p.cost_price || '' }); }
+  else { const x = S.inv[p.id] || (S.inv[p.id] = { cnt: 0, cost: '' }); x.cnt++; }
+  toast('+ ' + nm(p)); render();
+}
+
+// Вызов нативного сканера Telegram
+function cam(m) {
+  if (!tg || !tg.showScanQrPopup) return toast('Сканер недоступен. Откройте в Telegram.', 'er');
+  
+  tg.showScanQrPopup({ text: "Наведите на штрихкод" }, function(text) {
+    if (text) {
+      // Тактильный отклик при успешном сканировании
+      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+      
+      // Передаем штрихкод в функцию поиска
+      code(m, text);
+      
+      // Обязательно возвращаем true, чтобы Telegram сам мгновенно закрыл камеру
+      return true; 
+    }
+  });
+}
+
+function closeCam() {
+  // Оставляем пустой. Нативный сканер закрывается сам, 
+  // но функция нужна, чтобы старые вызовы при переходе по вкладкам не выдавали ошибку
 }
 function hit(m, p) {
   if (m === 'sale') { const l = S.cart.find(x => x.id === p.id); if (l) l.q++; else S.cart.push({ id: p.id, q: 1, price: p.retail_price || '' }); }
