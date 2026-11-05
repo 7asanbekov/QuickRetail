@@ -146,7 +146,7 @@ const V = {
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small class="${p && p.stock_quantity < l.q ? 'lo' : ''}">остаток ${p ? p.stock_quantity : 0}</small></div><button class="x" aria-label="Убрать" onclick="S.cart.splice(${i},1);render()">✕</button></div>
       <div class="r" style="margin-top:8px"><button class="x" onclick="sq(${i},-1)">−</button><b class="q">${l.q}</b><button class="x" onclick="sq(${i},1)">+</button><input class="pi" inputmode="decimal" aria-label="Цена" value="${esc(l.price)}" onchange="S.cart[${i}].price=this.value.replace(',','.');render()"><span class="lt">${fmt(l.q * (+l.price || 0))}</span></div></div>`;
     }).join('');
-    return scanbar('sale') + (h ? h + `<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>` : '');
+    return scanbar('sale') + (h ? h + `<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>` : '') + recentHtml();
   },
   buy() {
     let u = 0, t = 0;
@@ -184,11 +184,14 @@ async function render() {
   $('#app').innerHTML = h;
   if (t === 'prod') plist();
 }
-function go(t) { closeCam(); S.tab = t; render().catch(e => toast(e.message, 'er')); scrollTo(0, 0); }
+function go(t) { closeCam(); S.tab = t; render().catch(e => toast(e.message, 'er')); if (t === 'sale') loadRecent().then(render).catch(e => toast(e.message, 'er')); scrollTo(0, 0); }
 function plist() {
   const q = ($('#ps')?.value || '').toLowerCase();
   $('#pl').innerHTML = P.filter(p => !q || (p.name || '').toLowerCase().includes(q) || (p.barcode || '').includes(q)).map(row).join('');
 }
+
+async function loadRecent() { S.recent = (await stats(today(), today())).list; }
+const recentHtml = () => S.recent ? '<h2>Продажи за сегодня</h2>' + (S.recent.map(s => `<div class="c"><div class="bar"><b>${new Date(s.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</b><b>${fmt(s.total_amount)}</b></div><small>${(s.receipt_items || []).map(i => esc(nm(G(i.product_id))) + ' ×' + i.quantity).join(', ')}</small></div>`).join('') || '<p class="mu">Пока нет продаж</p>') : '';
 
 // ---------- ПОИСК / СКАНЕР ----------
 function look(m) { const e = $('#sq'), v = e.value; e.value = ''; code(m, v); }
@@ -257,7 +260,7 @@ function sell() {
   run(async () => {
     const { error } = await sb.rpc('sell', { p_store: STORE, p_user: USER, p_items: c.map(l => ({ id: l.id, q: l.q, price: +l.price })) });
     if (error) throw error;
-    S.cart = []; await load(); toast('Продажа сохранена', 'ok');
+    S.cart = []; await load(); await loadRecent(); toast('Продажа сохранена', 'ok');
   });
 }
 function buyAsk() {
@@ -297,7 +300,7 @@ async function startApp() {
     }
     await load();
     await render();
-    toast('Вход выполнен · v3 · токен получен', 'ok');
+    toast('Вход выполнен · v4 · токен получен', 'ok');
   } catch (e) {
     $('#app').innerHTML = `<h1>Ошибка входа</h1><p class="mu">${esc(e.message)}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
   }
