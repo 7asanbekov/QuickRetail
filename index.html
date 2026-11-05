@@ -137,7 +137,7 @@ const V = {
     const a = await stats(today(), today()), low = P.filter(p => p.stock_quantity <= LOW);
     return `<h1>${esc(STORE_NAME)}</h1><div class="g"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}`;
   },
-  prod() { return `<h1>Товары</h1><div class="row"><button class="pb" onclick="pform({})">Новый товар</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; },
+  prod() { return `<h1>Товары</h1><div class="row"><button class="pb" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="cam('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; },
   sale() {
     let t = 0;
     const h = S.cart.map((l, i) => {
