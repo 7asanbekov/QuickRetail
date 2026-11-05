@@ -227,7 +227,13 @@ function code(m, v) {
   v = v.trim(); if (!v) return;
   const l = find(v);
   if (!l.length) { closeCam(); return pform(/^\d{6,}$/.test(v) ? { barcode: v } : { name: v }, p => hit(m, p)); }
-  if (l.length === 1) return hit(m, l[0]);
+  
+  // ДОБАВЛЕНО: Закрываем камеру, если товар найден в базе
+  if (l.length === 1) { 
+      closeCam(); 
+      return hit(m, l[0]); 
+  }
+  
   closeCam(); T = { l, cb: p => hit(m, p) };
   modal('<h2>Выберите товар</h2>' + l.map((p, i) => `<div class="c r" onclick="closeModal();T.cb(T.l[${i}])" style="cursor:pointer"><div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><b>${p.stock_quantity} шт</b></div>`).join(''));
 }
