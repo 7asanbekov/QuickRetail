@@ -61,9 +61,38 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const $=s=>document.querySelector(s),K='shop_saas_v2';
 
-// --- ИМИТАЦИЯ СЕССИИ SAAS ---
-const STORE_ID = 'store_demo_1';
-const USER_ID = 10001; // telegram_id
+// --- РЕАЛЬНАЯ АВТОРИЗАЦИЯ ЧЕРЕЗ TELEGRAM ---
+let STORE_ID = null;
+let USER_ID = null;
+
+async function authenticate() {
+    if (!tg.initData) return toast('Откройте приложение внутри Telegram', 'er');
+    
+    // 1. Отправляем данные Telegram в нашу Edge-функцию
+    const { data, error } = await supabase.functions.invoke('auth-store', {
+        body: { initData: tg.initData }
+    });
+
+    if (error || !data) return toast('Ошибка доступа. Вы не зарегистрированы.', 'er');
+
+    // 2. Получаем официальный токен и данные магазина
+    STORE_ID = data.store_id;
+    USER_ID = data.telegram_id;
+    
+    // 3. Авторизуем клиент Supabase этим токеном
+    await supabase.auth.setSession({
+        access_token: data.token,
+        refresh_token: data.token
+    });
+
+    toast('Авторизация успешна', 'ok');
+    
+    // 4. Загружаем товары только после успешной авторизации
+    await loadProducts();
+}
+
+// Запускаем процесс при входе
+authenticate();
 
 let db=null;try{db=JSON.parse(localStorage.getItem(K))}catch(e){}
 db=db||{
