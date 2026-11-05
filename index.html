@@ -297,6 +297,7 @@ async function startApp() {
     }
     await load();
     await render();
+    toast('Вход выполнен · v3 · токен получен', 'ok');
   } catch (e) {
     $('#app').innerHTML = `<h1>Ошибка входа</h1><p class="mu">${esc(e.message)}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
   }
