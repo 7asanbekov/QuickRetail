@@ -83,14 +83,15 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 .bar{display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:14px}
 .gr{background:var(--ok);color:var(--pt);border-color:var(--ok)}.rd{background:var(--er);color:var(--pt);border-color:var(--er)}
 
-/* 1. Контейнер камеры: жесткий блок на весь экран (без Flexbox) */
-#cam { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000; z-index: 10; display: block; }
+/* 1. Контейнер камеры: на весь экран (под модальными окнами и уведомлениями) */
+#cam { position: fixed; inset: 0; background: #000; z-index: 8; display: block; }
 #cam[hidden] { display: none !important; }
 
-/* 2. Видео: принудительное растягивание и аппаратное ускорение для iOS */
-#cv { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; transform: translateZ(0); }
+/* 2. Видео создаётся заново при каждом открытии (иначе iOS иногда «залипает» на уменьшенном размере) */
+#cvbox { position: absolute; inset: 0; z-index: 1; }
+#cvbox video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 
-/* 3. Рамка прицеливания: уменьшена для правильного фокуса (220x120) */
+/* 3. Рамка прицеливания (220x120) */
 .cam-frame {
   position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
   width: 220px; height: 120px; z-index: 2; pointer-events: none;
@@ -107,7 +108,7 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 .cam-laser { position: absolute; width: 100%; height: 2px; background: #fbbf24; box-shadow: 0 0 10px #fbbf24; animation: scan 2s infinite ease-in-out; }
 @keyframes scan { 0%, 100% { top: 5%; } 50% { top: 95%; } }
 
-/* 4. Нижняя белая плашка */
+/* 4. Нижняя плашка */
 .cam-bottom { position: absolute; bottom: 0; left: 0; right: 0; background: var(--cd); border-radius: 20px 20px 0 0; padding: 24px 16px calc(16px + env(safe-area-inset-bottom, 0px)); text-align: center; z-index: 2; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); }
 .cam-bottom h3 { margin: 0 0 8px; font-size: 20px; }
 .cam-bottom p { color: var(--mu); margin: 0 0 24px; font-size: 15px; line-height: 1.4; }
@@ -140,20 +141,19 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
   <button class="owner-only" data-t="rep" onclick="go('rep')"><span>📊</span>Отчёты</button>
 </nav>
 
+<!-- Окно камеры сканера штрихкодов -->
 <div id="cam" hidden>
-  <!-- Тап по видео-фону тоже закроет сканер -->
-  <video id="cv" playsinline muted onclick="closeCam()"></video>
-  
+  <!-- Сюда при каждом открытии добавляется новый <video>. Тап по видео тоже закрывает сканер -->
+  <div id="cvbox" onclick="closeCam()"></div>
+
   <div class="cam-frame">
     <div class="cam-laser"></div>
   </div>
 
-<div class="cam-bottom">
+  <div class="cam-bottom">
     <h3>Отсканируйте код</h3>
-    <!-- Добавлена вторая строчка с подсказкой о расстоянии -->
     <p>Наведите рамку на штрихкод<br><span style="font-size:13px; opacity:0.8;">Отдалите телефон на 15–20 см для фокуса</span></p>
-    
-    <!-- SVG-иконка штрихкода (без изменений) -->
+
     <svg width="120" height="60" viewBox="0 0 120 60" fill="currentColor" style="color: var(--tx); margin: 0 auto; display: block; overflow: visible;">
       <rect x="0" y="0" width="6" height="60" />
       <rect x="10" y="0" width="4" height="60" />
@@ -174,6 +174,7 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 
     <button class="cam-cancel" onclick="closeCam()">Отмена</button>
   </div>
+</div>
 
 <!-- Контейнер для всплывающих окон (BottomSheet) -->
 <div class="ov" id="md" hidden><div class="sh" id="mb"></div></div>
@@ -205,6 +206,7 @@ let STORE = null,       // ID магазина
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
+const APP_VERSION = '1.0.9'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 // Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
 // при запуске показывалась на экране, а не молча останавливала приложение.
@@ -318,7 +320,7 @@ const scanbar = m => `<div class="sb"><input id="sq" placeholder="Штрихко
 const V = {
   async home() {
     const a = await stats(today(), today()), low = P.filter(p => p.stock_quantity <= LOW);
-    return `<h1>${esc(STORE_NAME)}</h1><div class="g owner-only"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}`;
+    return `<h1>${esc(STORE_NAME)}</h1><div class="g owner-only"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}<p class="mu" style="text-align:center"><small>Версия ${APP_VERSION}</small></p>`;
   },
   prod() { 
     return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="scanBarcode('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; 
@@ -503,11 +505,13 @@ async function scanBarcode(m) {
   try {
     if (!CAMSTREAM || !CAMSTREAM.getVideoTracks().some(t => t.readyState === 'live'))
       CAMSTREAM = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
-    const v = $('#cv'); v.srcObject = CAMSTREAM; await v.play();
     $('#cam').hidden = false; // окно показываем только после получения доступа
+    const box = $('#cvbox'); box.innerHTML = '';
+    const v = document.createElement('video'); // новый <video> при каждом открытии
+    v.setAttribute('playsinline', ''); v.muted = true;
+    box.appendChild(v); v.srcObject = CAMSTREAM; await v.play();
     const det = new BarcodeDetectionAPI.BarcodeDetector({ formats: BARCODE_FORMATS });
     const c = { on: 1, last: '', lt: 0 }; CB = c;
-    
     const loop = async () => {
       if (!c.on) return;
       try {
@@ -519,15 +523,9 @@ async function scanBarcode(m) {
             if (x !== c.last || Date.now() - c.lt > 2500) {
               c.last = x; c.lt = Date.now();
               if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light'); else if (navigator.vibrate) navigator.vibrate(50);
-              
-              // 1. Сразу скрываем интерфейс камеры
-              closeCam();
-              
-              // 2. Передаем код в функцию обработки (добавление в корзину)
-              code(m, x);
-              
-              // 3. Останавливаем цикл сканирования
-              return; 
+              closeCam();   // сразу скрываем камеру
+              code(m, x);   // добавляем товар (или открываем форму нового)
+              return;       // останавливаем цикл
             }
           }
         }
@@ -543,7 +541,7 @@ async function scanBarcode(m) {
 
 function closeCam() {
   if (CB) { CB.on = 0; CB = null; clearTimeout(camIdle); camIdle = setTimeout(releaseCam, CAM_IDLE_MS); }
-  const v = $('#cv'); if (v) { v.pause(); v.srcObject = null; } // дорожки камеры не останавливаем — иначе iOS снова спросит доступ
+  const v = $('#cvbox video'); if (v) { v.pause(); v.srcObject = null; v.remove(); } // дорожки камеры не останавливаем — иначе iOS снова спросит доступ
   $('#cam').hidden = true;
 }
 
