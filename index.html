@@ -449,6 +449,7 @@ async function scanBarcode(m) {
     $('#cam').hidden = false; // окно показываем только после получения доступа
     const det = new BarcodeDetectionAPI.BarcodeDetector({ formats: BARCODE_FORMATS });
     const c = { on: 1, last: '', lt: 0 }; CB = c;
+    
     const loop = async () => {
       if (!c.on) return;
       try {
@@ -460,7 +461,15 @@ async function scanBarcode(m) {
             if (x !== c.last || Date.now() - c.lt > 2500) {
               c.last = x; c.lt = Date.now();
               if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light'); else if (navigator.vibrate) navigator.vibrate(50);
+              
+              // 1. Сразу скрываем интерфейс камеры
+              closeCam();
+              
+              // 2. Передаем код в функцию обработки (добавление в корзину)
               code(m, x);
+              
+              // 3. Останавливаем цикл сканирования
+              return; 
             }
           }
         }
