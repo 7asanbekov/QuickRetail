@@ -137,6 +137,28 @@ let STORE = null,       // ID магазина
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
 
+// Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
+// при запуске показывалась на экране, а не молча останавливала приложение.
+addEventListener('error', e => toast(e.message, 'er'));
+addEventListener('unhandledrejection', e => toast(e.reason?.message || String(e.reason), 'er'));
+
+/* 
+=========================================================
+ 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (Утилиты)
+=========================================================
+Функции объявлены через function (а не const), чтобы они были доступны
+в любом месте файла, в том числе при создании состояния ниже.
+*/
+function $(s) { return document.querySelector(s); }
+function r2(n) { return Math.round(n * 100) / 100; } // Округление до 2 знаков
+function fmt(n) { return r2(+n || 0).toLocaleString('ru-RU') + ' сом'; } // Формат валюты
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); } // Экранирование XSS
+function dk(t) { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); } // Формат даты YYYY-MM-DD
+function today() { return dk(Date.now()); }
+function G(id) { return P.find(p => p.id === id); } // Получить товар из кэша по ID
+function nm(p) { return p ? (p.name || p.barcode || 'Без названия') : '(удалён)'; } // Имя товара с fallback
+function num(v) { v = String(v ?? '').trim().replace(',', '.'); if (v === '') return 0; return +v >= 0 ? r2(+v) : false; } // Парсинг чисел из инпутов
+
 // Состояние текущей сессии (переключение вкладок, корзины)
 const S = { 
   docs: {},             // Кэш загруженных документов (чеки, закупки)
@@ -147,25 +169,6 @@ const S = {
   from: today(),        // Начальная дата для отчетов
   to: today()           // Конечная дата для отчетов 
 };
-
-/* 
-=========================================================
- 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (Утилиты)
-=========================================================
-*/
-const $ = s => document.querySelector(s);
-const r2 = n => Math.round(n * 100) / 100; // Округление до 2 знаков
-const fmt = n => r2(+n || 0).toLocaleString('ru-RU') + ' сом'; // Формат валюты
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); // Экранирование XSS
-const dk = t => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }; // Формат даты YYYY-MM-DD
-function today() { return dk(Date.now()); }
-const G = id => P.find(p => p.id === id); // Получить товар из кэша по ID
-const nm = p => p ? (p.name || p.barcode || 'Без названия') : '(удалён)'; // Имя товара с fallback
-const num = v => { v = String(v ?? '').trim().replace(',', '.'); if (v === '') return 0; return +v >= 0 ? r2(+v) : false; }; // Парсинг чисел из инпутов
-
-// Глобальный перехват ошибок
-addEventListener('error', e => toast(e.message, 'er'));
-addEventListener('unhandledrejection', e => toast(e.reason?.message || String(e.reason), 'er'));
 
 /* Вывод уведомлений на экран */
 function toast(m, k) {
@@ -234,7 +237,7 @@ async function stats(f, t) {
 =========================================================
 */
 // Шаблон фото в списке товаров
-const ph=p=>p.photo?`<img class="th" src="${p.photo}" alt="">`:'<div class="ph">📦</div>';
+const ph=p=>p.photo?`<img class="th" src="${esc(p.photo)}" alt="">`:'<div class="ph">📦</div>';
 
 // Шаблон строки товара
 const row = p => `<div class="c r" onclick="pform(G('${p.id}'))" style="cursor:pointer">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><div style="text-align:right"><b class="${p.stock_quantity <= LOW ? 'lo' : ''}">${p.stock_quantity} шт</b><br><small>${p.retail_price ? fmt(p.retail_price) : 'без цены'}</small></div></div>`;
@@ -449,7 +452,7 @@ function pform(p, cb) {
   modal(`<h2>${e ? 'Товар' : 'Новый товар'}</h2>
   <div class="r" style="margin-bottom:12px;justify-content:center">
     <div id="pp" onclick="$('#pf').click()" style="cursor:pointer;width:100%;background:var(--bg);border-radius:12px;overflow:hidden;text-align:center">
-      ${p.photo ? `<img src="${p.photo}" style="width:100%;max-height:220px;object-fit:contain;display:block" alt="">` : `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`}
+      ${p.photo ? `<img src="${esc(p.photo)}" style="width:100%;max-height:220px;object-fit:contain;display:block" alt="">` : `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`}
     </div>
     <input id="pf" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
   </div>
@@ -552,11 +555,9 @@ async function startApp() {
     // Пересоздаем клиент с авторизационным JWT токеном
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + data.token } } });
     
-    // Запрос роли из базы данных для ограничения интерфейса (owner-only)
-    const { data: userData } = await sb.from('users').select('role').eq('telegram_id', USER).maybeSingle();
-    if (userData && userData.role === 'cashier') {
-      document.body.classList.add('cashier-mode');
-    }
+    // Роль приходит в ответе функции входа (таблица users закрыта политиками для клиента)
+    ROLE = data.role;
+    if (ROLE === 'cashier') document.body.classList.add('cashier-mode');
 
     // Проверка статуса подписки магазина
     const { data: st } = await sb.from('stores').select('name,sub_status').eq('id', STORE).maybeSingle();
