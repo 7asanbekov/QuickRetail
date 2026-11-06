@@ -2,12 +2,25 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover"><title>Магазин</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
+<title>Магазин</title>
 <style>
+/* 
+=========================================================
+ CSS-ПЕРЕМЕННЫЕ И БАЗОВЫЕ НАСТРОЙКИ ТЕМЫ
+=========================================================
+Поддержка светлой и темной темы (prefers-color-scheme).
+Цвета вынесены в переменные для быстрой смены брендинга.
+*/
 :root{--bg:#f4f5f2;--cd:#fff;--tx:#1c2321;--mu:#68716d;--br:#dfe3de;--pr:#0f766e;--pt:#fff;--ok:#15803d;--er:#b42318;--wa:#b45309;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
 @media(prefers-color-scheme:dark){:root{--bg:#121615;--cd:#1c2220;--tx:#eef2ef;--mu:#9aa5a0;--br:#2c3532;--pr:#2dd4bf;--pt:#06201c;--ok:#4ade80;--er:#f87171;--wa:#fbbf24}}
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; touch-action: manipulation;}#app{max-width:640px;margin:0 auto;padding:14px 14px 96px}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; touch-action: manipulation;}
+
+/* Основной контейнер приложения с отступом под нижнюю навигацию */
+#app{max-width:640px;margin:0 auto;padding:14px 14px 96px}
+
+/* Типографика и базовые элементы */
 h1{font-size:24px;margin:6px 0 12px}h2{font-size:17px;margin:20px 0 8px}
 small{color:var(--mu);font-size:13px}.mu{color:var(--mu);padding:10px 0}
 button,input{font:inherit;color:inherit}
@@ -17,89 +30,185 @@ button.big{width:100%;min-height:56px;font-size:18px;margin-top:12px}
 button:focus-visible,input:focus-visible{outline:3px solid var(--pr);outline-offset:2px}
 input{width:100%;min-height:48px;padding:0 12px;border:1px solid var(--br);border-radius:12px;background:var(--cd)}
 label{display:block;margin:10px 0;font-size:14px;color:var(--mu)}label input{margin-top:4px;color:var(--tx)}
+
+/* 
+=========================================================
+ КАРТОЧКИ, СПИСКИ И ФОРМЫ (UI КОМПОНЕНТЫ)
+=========================================================
+*/
+/* Карточка товара/документа (белая плашка) */
 .c{background:var(--cd);border:1px solid var(--br);border-radius:14px;padding:12px;margin:10px 0}
+/* Сетка для дашборда (2 колонки) */
 .g{display:grid;grid-template-columns:1fr 1fr;gap:10px}.g .c{margin:0}.g b{display:block;font-size:22px}.g .w{grid-column:1/3}
+/* Flex-строка с отступами */
 .row,.r{display:flex;gap:8px;align-items:center}.row{margin:12px 0}.row button{flex:1}.f{flex:1;min-width:0}
+/* Усечение длинного текста троеточием */
 .f b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Миниатюры фотографий в списках товаров */
 .th, .ph { width: 44px; height: 44px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
 .ph { background: var(--br); display: flex; align-items: center; justify-content: center; font-size: 22px; }
+
+/* Панель поиска и сканирования (залипает сверху при скролле) */
 .sb{display:flex;gap:8px;position:sticky;top:0;background:var(--bg);padding:6px 0 10px;z-index:3}.sb input{flex:1}
+/* Элементы корзины (количество, цена) */
 .q{min-width:32px;text-align:center;font-size:20px}.pi{width:96px;text-align:right}.lt{flex:1;text-align:right;font-weight:600}
+/* Кнопка крестик/иконка */
 .x{min-height:40px;width:40px;padding:0}
+/* Итоговая сумма внизу */
 .tot{display:flex;justify-content:space-between;font-size:22px;padding:14px 4px 0}
+
+/* Цвета статусов */
 .lo{color:var(--er)}.ok{color:var(--ok)}.wa{color:var(--wa)}
+
+/* 
+=========================================================
+ НАВИГАЦИЯ, МОДАЛЬНЫЕ ОКНА И УВЕДОМЛЕНИЯ
+=========================================================
+*/
+/* Нижнее меню (TabBar) */
 nav{position:fixed;left:0;right:0;bottom:0;display:none;background:var(--cd);border-top:1px solid var(--br);padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
 nav button{flex:1;border:0;border-radius:0;background:none;font-size:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:58px;padding:0 2px;color:var(--mu)}
 nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
+
+/* Затемнение (оверлей) и контейнер модального окна (BottomSheet) */
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:9}
-.ov[hidden],#cam[hidden]{display:none}
+.ov[hidden]{display:none}
 .sh{background:var(--bg);width:100%;max-width:640px;max-height:90%;overflow:auto;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px))}
-#cam{position:fixed;inset:0;background:#000;z-index:8;display:flex;flex-direction:column}#cam video{flex:1;min-height:0;width:100%;object-fit:cover}
-#cam div{padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));color:#fff;display:flex;gap:10px;align-items:center}
+
+/* Всплывающие уведомления (Toast) сверху */
 #toast{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;padding:12px 14px;border-radius:12px;display:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)}
+
+/* Статистика и документы */
 .bar{display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:14px}
 .gr{background:var(--ok);color:var(--pt);border-color:var(--ok)}.rd{background:var(--er);color:var(--pt);border-color:var(--er)}
+
+/* Окно камеры сканера (поверх приложения, под модальными окнами и уведомлениями) */
+#cam{position:fixed;inset:0;background:#000;z-index:8;display:flex;flex-direction:column}
+#cam[hidden]{display:none}
+#cam video{flex:1;min-height:0;width:100%;object-fit:cover}
+#cam>div{padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));color:#fff;display:flex;gap:10px;align-items:center}
 
 /* Скрываем элементы с классом owner-only, если включен режим кассира */
 .cashier-mode .owner-only { display: none !important; }
 </style>
+<!-- Подключение SDK Telegram Web App -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- Подключение Supabase JS клиента -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<!-- Распознавание штрихкодов: ZXing-C++ (WebAssembly) с интерфейсом BarcodeDetector -->
+<script defer src="https://cdn.jsdelivr.net/npm/barcode-detector@3.0.1/dist/iife/ponyfill.min.js"></script>
 </head>
 <body>
+
+<!-- Главный контейнер для рендера страниц -->
 <div id="app"><p class="mu" style="text-align:center;padding-top:40px">Подключение к серверу...</p></div>
+
+<!-- Нижнее меню навигации -->
 <nav id="nav">
   <button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button>
   <button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button>
-  <!-- Добавлен класс owner-only для скрытия от кассира -->
   <button class="owner-only" data-t="buy" onclick="go('buy')"><span>📥</span>Закупка</button>
   <button data-t="sale" onclick="go('sale')"><span>🛒</span>Продажа</button>
   <button class="owner-only" data-t="inv" onclick="go('inv')"><span>📋</span>Сверка</button>
   <button class="owner-only" data-t="rep" onclick="go('rep')"><span>📊</span>Отчёты</button>
 </nav>
+
+<!-- Окно камеры сканера штрихкодов -->
 <div id="cam" hidden><video id="cv" playsinline muted></video><div><span class="f">Наведите на штрихкод</span><button onclick="closeCam()">Готово</button></div></div>
-<div class="ov" id="md" hidden><div class="sh" id="mb"></div></div><div id="toast" role="status"></div>
+
+<!-- Контейнер для всплывающих окон (BottomSheet) -->
+<div class="ov" id="md" hidden><div class="sh" id="mb"></div></div>
+
+<!-- Контейнер для системных уведомлений -->
+<div id="toast" role="status"></div>
 
 <script>
+/* 
+=========================================================
+ 1. ИНИЦИАЛИЗАЦИЯ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+=========================================================
+*/
 const tg = window.Telegram && Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
 const SUPABASE_URL = 'https://zejpqdzashqaudcxdpoh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5FcwXPo1yU6BzYhmmfVQcA_DNv9U7ku';
 let sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-let STORE = null, USER = null, ROLE = null, STORE_NAME = 'Сегодня', P = [], busy = false, ASK = null, T = null, CB = null, tmr;
-const LOW = 2;
 
-const $ = s => document.querySelector(s);
-const r2 = n => Math.round(n * 100) / 100;
-const fmt = n => r2(+n || 0).toLocaleString('ru-RU') + ' сом';
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const dk = t => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
-const today = () => dk(Date.now());
-const G = id => P.find(p => p.id === id);
-const nm = p => p ? (p.name || p.barcode || 'Без названия') : '(удалён)';
-const num = v => { v = String(v ?? '').trim().replace(',', '.'); if (v === '') return 0; return +v >= 0 ? r2(+v) : false; };
-const S = { docs: {}, tab: 'home', cart: [], pcart: [], inv: {}, from: today(), to: today() };
+// Глобальное состояние приложения
+let STORE = null,       // ID магазина
+    USER = null,        // ID пользователя (Telegram)
+    ROLE = null,        // Роль (owner/cashier)
+    STORE_NAME = 'Сегодня',
+    P = [],             // Локальный кэш каталога товаров (P - Products)
+    busy = false,       // Блокировка интерфейса во время сетевых запросов
+    ASK = null,         // Callback для модального окна подтверждения
+    T = null,           // Временные данные для модальных окон
+    tmr;                // Таймер скрытия toast-уведомлений
+const LOW = 2;          // Порог предупреждения о низком остатке товара
 
+// Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
+// при запуске показывалась на экране, а не молча останавливала приложение.
 addEventListener('error', e => toast(e.message, 'er'));
 addEventListener('unhandledrejection', e => toast(e.reason?.message || String(e.reason), 'er'));
 
+/* 
+=========================================================
+ 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (Утилиты)
+=========================================================
+Функции объявлены через function (а не const), чтобы они были доступны
+в любом месте файла, в том числе при создании состояния ниже.
+*/
+function $(s) { return document.querySelector(s); }
+function r2(n) { return Math.round(n * 100) / 100; } // Округление до 2 знаков
+function fmt(n) { return r2(+n || 0).toLocaleString('ru-RU') + ' сом'; } // Формат валюты
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); } // Экранирование XSS
+function dk(t) { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); } // Формат даты YYYY-MM-DD
+function today() { return dk(Date.now()); }
+function G(id) { return P.find(p => p.id === id); } // Получить товар из кэша по ID
+function nm(p) { return p ? (p.name || p.barcode || 'Без названия') : '(удалён)'; } // Имя товара с fallback
+function num(v) { v = String(v ?? '').trim().replace(',', '.'); if (v === '') return 0; return +v >= 0 ? r2(+v) : false; } // Парсинг чисел из инпутов
+
+// Состояние текущей сессии (переключение вкладок, корзины)
+const S = { 
+  docs: {},             // Кэш загруженных документов (чеки, закупки)
+  tab: 'home',          // Текущая активная вкладка
+  cart: [],             // Корзина продажи (sale)
+  pcart: [],            // Корзина закупки (buy)
+  inv: {},              // Список товаров в сверке (inv)
+  from: today(),        // Начальная дата для отчетов
+  to: today()           // Конечная дата для отчетов 
+};
+
+/* Вывод уведомлений на экран */
 function toast(m, k) {
   const t = $('#toast'); t.textContent = m; t.style.display = 'block';
   t.style.background = k === 'er' ? 'var(--er)' : k === 'ok' ? 'var(--ok)' : 'var(--tx)';
   t.style.color = k ? 'var(--pt)' : 'var(--bg)';
   clearTimeout(tmr); tmr = setTimeout(() => t.style.display = 'none', k === 'er' ? 3500 : 1500);
 }
+
+/* Обертка для асинхронных вызовов к БД (блокирует повторные клики) */
 async function run(fn) {
   if (busy) return; busy = true;
   try { await fn(); }
   catch (e) { toast(/jwt|token/i.test(e.message||'') ? 'Сессия истекла' : (e.message || String(e)), 'er'); } 
   finally { busy = false; render(); }
 }
+
+/* Управление модальными окнами */
 function modal(h) { $('#mb').innerHTML = h; $('#md').hidden = false; }
 function closeModal() { $('#md').hidden = true; }
 function ask(t, y) { ASK = y; modal(`<h2>${esc(t)}</h2><div class="row"><button onclick="closeModal()">Нет</button><button class="pb" onclick="closeModal();ASK()">Да</button></div>`); }
 
+/* 
+=========================================================
+ 3. РАБОТА С БАЗОЙ ДАННЫХ (Supabase)
+=========================================================
+*/
+
+/* Загрузка полного каталога товаров магазина в локальный кэш (пагинация по 1000) */
 async function load() {
   let all = [], f = 0;
   for (;;) {
@@ -111,12 +220,15 @@ async function load() {
   }
   P = all;
 }
+
+/* Выгрузка статистики за период */
 async function stats(f, t) {
   const a = new Date(f + 'T00:00:00').toISOString(), b = new Date(t + 'T23:59:59.999').toISOString();
   const { data, error } = await sb.from('receipts')
     .select('id,total_amount,total_cogs,created_at,receipt_items(product_id,quantity,price_at_sale)')
     .eq('store_id', STORE).eq('deleted', false).gte('created_at', a).lte('created_at', b).order('created_at', { ascending: false }).limit(1000);
   if (error) throw error;
+  
   const o = { n: data.length, rev: 0, cost: 0, u: 0, by: {}, list: data };
   data.forEach(s => {
     o.rev += +s.total_amount; o.cost += +s.total_cogs;
@@ -129,26 +241,29 @@ async function stats(f, t) {
   o.rev = r2(o.rev); o.cost = r2(o.cost); o.gp = r2(o.rev - o.cost);
   return o;
 }
-function find(q) {
-  q = q.trim(); if (!q) return [];
-  const l = q.toLowerCase();
-  const a = P.filter(p => p.barcode === q); if (a.length) return a;
-  return P.filter(p => (p.name || '').toLowerCase().includes(l));
-}
 
-const ph=p=>p.photo?`<img class="th" src="${p.photo}" alt="">`:'<div class="ph">📦</div>';
+/* 
+=========================================================
+ 4. ШАБЛОНЫ ОТРИСОВКИ ИНТЕРФЕЙСА (Views)
+=========================================================
+*/
+// Шаблон фото в списке товаров
+const ph=p=>p.photo?`<img class="th" src="${esc(p.photo)}" alt="">`:'<div class="ph">📦</div>';
+
+// Шаблон строки товара
 const row = p => `<div class="c r" onclick="pform(G('${p.id}'))" style="cursor:pointer">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><div style="text-align:right"><b class="${p.stock_quantity <= LOW ? 'lo' : ''}">${p.stock_quantity} шт</b><br><small>${p.retail_price ? fmt(p.retail_price) : 'без цены'}</small></div></div>`;
-const scanbar = m => `<div class="sb"><input id="sq" placeholder="Штрихкод или название" inputmode="search" onkeydown="if(event.key==='Enter')look('${m}')"><button onclick="look('${m}')">Найти</button><button aria-label="Камера" onclick="cam('${m}')">📷</button></div>`;
 
+// Шаблон верхней панели поиска с кнопками "Найти" и "Камера"
+const scanbar = m => `<div class="sb"><input id="sq" placeholder="Штрихкод или название" inputmode="search" onkeydown="if(event.key==='Enter')look('${m}')"><button onclick="look('${m}')">Найти</button><button aria-label="Камера" onclick="scanBarcode('${m}')">📷</button></div>`;
+
+// Объект V содержит функции отрисовки для каждой вкладки навигации
 const V = {
   async home() {
     const a = await stats(today(), today()), low = P.filter(p => p.stock_quantity <= LOW);
-    // Добавлен класс owner-only на блок с финансами
     return `<h1>${esc(STORE_NAME)}</h1><div class="g owner-only"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}`;
   },
   prod() { 
-    // Добавлен класс owner-only на кнопку "Новый товар"
-    return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="cam('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; 
+    return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="scanBarcode('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; 
   },
   sale() {
     let t = 0;
@@ -190,6 +305,7 @@ const V = {
   }
 };
 
+/* Главная функция обновления DOM */
 async function render() {
   $('#nav').style.display = 'flex';
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === S.tab));
@@ -198,21 +314,43 @@ async function render() {
   $('#app').innerHTML = h;
   if (t === 'prod') plist();
 }
-function go(t) { closeCam(); S.tab = t; render().catch(e => toast(e.message, 'er')); if (TK[t]) loadDocs(TK[t]).then(render).catch(e => toast(e.message, 'er')); scrollTo(0, 0); }
+
+/* Смена вкладки */
+function go(t) { 
+  S.tab = t; 
+  render().catch(e => toast(e.message, 'er')); 
+  // Если для вкладки есть документы (чеки), загружаем их
+  if (TK[t]) loadDocs(TK[t]).then(render).catch(e => toast(e.message, 'er')); 
+  scrollTo(0, 0); 
+}
+
+/* Локальный поиск по товарам на вкладке "Товары" */
 function plist() {
   const q = ($('#ps')?.value || '').toLowerCase();
   $('#pl').innerHTML = P.filter(p => !q || (p.name || '').toLowerCase().includes(q) || (p.barcode || '').includes(q)).map(row).join('');
 }
 
+
+/* 
+=========================================================
+ 5. РАБОТА С ДОКУМЕНТАМИ (Чеки, Закупки, Инвентаризация)
+=========================================================
+*/
 const DK = { s: ['receipts', 'receipt_items(id,product_id,quantity,price_at_sale,cost_at_sale)', 'receipt_items'], p: ['purchases', 'purchase_items(id,product_id,quantity,cost)', 'purchase_items'], i: ['inventories', 'inventory_items(id,product_id,book_qty,counted_qty,delta,cost)', 'inventory_items'] };
 const DN = { s: 'Продажа', p: 'Закупка', i: 'Сверка' }, DT = { s: 'Продажи', p: 'Закупки', i: 'Сверки остатков' }, TK = { sale: 's', buy: 'p', inv: 'i' };
+
+/* Загрузка ленты документов для текущей вкладки */
 async function loadDocs(k) {
   let q = sb.from(DK[k][0]).select('*,' + DK[k][1]).eq('store_id', STORE).order('created_at', { ascending: false }).limit(S.jall ? 300 : 100);
   if (!S.jall) q = q.gte('created_at', new Date(today() + 'T00:00:00').toISOString());
   const { data, error } = await q; if (error) throw error;
   S.docs[k] = data;
 }
+
+/* Рендер списка документов внизу вкладки */
 const journal = k => !S.docs[k] ? '' : `<h2>${DT[k]} ${S.jall ? '(все)' : 'за сегодня'}</h2>` + (S.docs[k].map(d => `<div class="c" onclick="openDoc('${k}','${d.id}')" style="cursor:pointer${d.deleted ? ';opacity:.55' : ''}"><div class="bar"><b>${DN[k]} № ${d.n ?? '—'}</b><b class="${d.deleted ? 'lo' : ''}">${d.deleted ? 'помечен на удаление' : k === 'i' ? d.inventory_items.length + ' поз.' : fmt(d.total_amount)}</b></div><small>${new Date(d.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small></div>`).join('') || '<p class="mu">Нет документов</p>') + `<div class="row"><button onclick="S.jall=!S.jall;loadDocs('${k}').then(render)">${S.jall ? 'Только сегодня' : 'Показать все'}</button></div>`;
+
+/* Открытие детального просмотра документа (модальное окно) */
 function openDoc(k, id) {
   const d = S.docs[k].find(x => x.id === id), its = d[DK[k][2]], ed = !d.deleted;
   const val = i => k === 'i' ? i.counted_qty : i.quantity, pv = i => k === 's' ? i.price_at_sale : i.cost;
@@ -224,77 +362,136 @@ function openDoc(k, id) {
   const sm = k === 's' ? `<div class="bar"><b>Итого</b><b>${fmt(d.total_amount)}</b></div><div class="bar"><span>Себестоимость</span><span>${fmt(d.total_cogs)}</span></div><div class="bar"><span>Валовая прибыль</span><span>${fmt(d.total_amount - d.total_cogs)}</span></div>` : k === 'p' ? `<div class="bar"><b>Итого</b><b>${fmt(d.total_amount)}</b></div>` : '';
   modal(`<h2>${DN[k]} № ${d.n ?? '—'}</h2><small>${new Date(d.created_at).toLocaleString('ru-RU')}${d.deleted ? ' · помечен на удаление' : ''}</small><div class="c">${lines}${sm}</div><div class="row">${d.deleted ? `<button class="gr" onclick="markDoc('${k}','${id}',false)">Снять пометку</button>` : `<button class="gr" onclick="saveDoc('${k}','${id}')">Исправить</button><button class="rd" onclick="ask('Пометить на удаление? Остатки вернутся.',()=>markDoc('${k}','${id}',true))">Пометить на удаление</button>`}</div><button class="big" onclick="closeModal()">Закрыть</button>`);
 }
+
+/* Сохранение изменений в существующем документе */
 function saveDoc(k, id) {
   const rows = [...document.querySelectorAll('#mb .ln')].map(r => ({ id: r.dataset.id, q: parseInt(r.querySelector('.iq').value), p: r.querySelector('.ip') ? +String(r.querySelector('.ip').value).replace(',', '.') : 0 }));
   if (!rows.length) return toast('В документе должна остаться хотя бы одна строка', 'er');
   if (rows.some(r => !(r.q >= (k === 'i' ? 0 : 1)) || !(r.p >= 0))) return toast('Проверьте количество и цену', 'er');
   run(async () => { const { error } = await sb.rpc('doc_edit', { p_kind: k, p_id: id, p_items: rows }); if (error) throw error; closeModal(); await load(); await loadDocs(k); toast('Документ исправлен', 'ok'); });
 }
+
+/* Пометка документа на удаление (soft delete) */
 function markDoc(k, id, del) {
   run(async () => { const { error } = await sb.rpc('doc_mark', { p_kind: k, p_id: id, p_deleted: del }); if (error) throw error; closeModal(); await load(); await loadDocs(k); toast(del ? 'Помечен на удаление' : 'Пометка снята', 'ok'); });
 }
 
+
+/* 
+=========================================================
+ 6. ПОИСК ТОВАРОВ И СКАНИРОВАНИЕ
+=========================================================
+*/
+
+// Локальный поиск по массиву кэша товаров (P)
+function find(q) {
+  q = q.trim(); if (!q) return [];
+  const l = q.toLowerCase();
+  const a = P.filter(p => p.barcode === q); if (a.length) return a;
+  return P.filter(p => (p.name || '').toLowerCase().includes(l));
+}
+
+// Обработка ручного поиска (когда нажали кнопку "Найти")
 function look(m) { const e = $('#sq'), v = e.value; e.value = ''; code(m, v); }
+
+// Обработка штрихкода (введенного вручную или со сканера)
 function code(m, v) {
   v = v.trim(); if (!v) return;
   const l = find(v);
-  if (!l.length) { closeCam(); return pform(/^\d{6,}$/.test(v) ? { barcode: v } : { name: v }, p => hit(m, p)); }
-  if (l.length === 1) { closeCam(); return hit(m, l[0]); }
+  
+  // Если товар не найден - предлагаем создать новый (заполняя штрихкод)
+  if (!l.length) { closeCam(); return pform(/^\d{6,}$/.test(v) ? { barcode: v } : { name: v }, m === 'prod' ? null : p => hit(m, p)); }
+  // Если найден ровно один товар - сразу добавляем в корзину
+  if (l.length === 1) { return hit(m, l[0]); }
+  // Если найдено несколько (по совпадению имени) - показываем модальное окно выбора
   closeCam(); T = { l, cb: p => hit(m, p) };
   modal('<h2>Выберите товар</h2>' + l.map((p, i) => `<div class="c r" onclick="closeModal();T.cb(T.l[${i}])" style="cursor:pointer"><div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><b>${p.stock_quantity} шт</b></div>`).join(''));
 }
+
+// Добавление товара в нужную корзину (Продажа, Закупка, Сверка)
 function hit(m, p) {
+  if (m === 'prod') { closeCam(); return pform(p); } // на вкладке «Товары» сканирование открывает карточку
   if (m === 'sale') { const l = S.cart.find(x => x.id === p.id); if (l) l.q++; else S.cart.push({ id: p.id, q: 1, price: p.retail_price || '' }); }
   else if (m === 'buy') { const l = S.pcart.find(x => x.id === p.id); if (l) l.q = (+l.q || 0) + 1; else S.pcart.push({ id: p.id, q: 1, cost: p.cost_price || '' }); }
   else { const x = S.inv[p.id] || (S.inv[p.id] = { cnt: 0, cost: '' }); x.cnt++; }
   toast('+ ' + nm(p)); render();
 }
 
-let CAMSTREAM = null, camIdle = null;
-const CAM_IDLE_MS = 3 * 60 * 1000;
+/* 
+=========================================================
+ СКАНЕР ШТРИХКОДОВ (камера + barcode-detector)
+=========================================================
+iOS спрашивает доступ к камере при каждом getUserMedia, поэтому поток камеры держим открытым
+между сканированиями (запрос появляется один раз) и отпускаем после CAM_IDLE_MS простоя.
+*/
+let CAMSTREAM = null, camIdle = null, CB = null;
+const CAM_IDLE_MS = 3 * 60 * 1000;  // через сколько после закрытия сканера отпускать камеру
+const BARCODE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'qr_code']; // меньше форматов — быстрее
+
 function releaseCam() { clearTimeout(camIdle); if (CAMSTREAM) { CAMSTREAM.getTracks().forEach(t => t.stop()); CAMSTREAM = null; } }
-async function cam(m) {
+
+// Прогрев: заранее загружает модуль распознавания, чтобы первое сканирование не тормозило
+function warmScanner() {
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 8;
+    new BarcodeDetectionAPI.BarcodeDetector({ formats: ['ean_13'] }).detect(c).catch(() => {});
+  } catch (e) {}
+}
+
+async function scanBarcode(m) {
   if (!navigator.mediaDevices?.getUserMedia) return toast('Камера недоступна', 'er');
-  if (!window.ZXing) {
-    toast('Загрузка модуля сканера...');
-    try {
-      await new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.2/umd/index.min.js';
-        s.onload = res; s.onerror = rej; document.head.appendChild(s);
-      });
-    } catch (e) { return toast('Не удалось загрузить сканер — проверьте интернет', 'er'); }
-  }
+  if (!window.BarcodeDetectionAPI) return toast('Модуль сканера не загружен — проверьте интернет', 'er');
   clearTimeout(camIdle);
   try {
     if (!CAMSTREAM || !CAMSTREAM.getVideoTracks().some(t => t.readyState === 'live'))
-      CAMSTREAM = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    $('#cam').hidden = false;
-    const reader = new ZXing.BrowserMultiFormatReader();
-    const c = { reader, on: 1, last: '', lt: 0 }; CB = c;
-    const copy = new MediaStream(CAMSTREAM.getVideoTracks().map(t => t.clone()));
-    await reader.decodeFromStream(copy, 'cv', res => {
-      if (!c.on || !res) return;
-      const x = res.getText();
-      if (x !== c.last || Date.now() - c.lt > 2500) {
-        c.last = x; c.lt = Date.now();
-        if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light'); else if (navigator.vibrate) navigator.vibrate(50);
-        code(m, x);
-      }
-    });
-  } catch (e) { closeCam(); releaseCam(); toast('Камера недоступна или доступ запрещён', 'er'); }
-}
-function closeCam() {
-  if (CB) { CB.on = 0; try { CB.reader.reset(); } catch (e) {} CB = null; clearTimeout(camIdle); camIdle = setTimeout(releaseCam, CAM_IDLE_MS); }
-  const v = $('#cv'); if (v) v.srcObject = null; $('#cam').hidden = true;
+      CAMSTREAM = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
+    const v = $('#cv'); v.srcObject = CAMSTREAM; await v.play();
+    $('#cam').hidden = false; // окно показываем только после получения доступа
+    const det = new BarcodeDetectionAPI.BarcodeDetector({ formats: BARCODE_FORMATS });
+    const c = { on: 1, last: '', lt: 0 }; CB = c;
+    const loop = async () => {
+      if (!c.on) return;
+      try {
+        if (v.readyState >= 2) {
+          const r = await det.detect(v);
+          if (c.on && r[0]) {
+            const x = r[0].rawValue;
+            // защита от повторного срабатывания на тот же штрихкод (2,5 сек)
+            if (x !== c.last || Date.now() - c.lt > 2500) {
+              c.last = x; c.lt = Date.now();
+              if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light'); else if (navigator.vibrate) navigator.vibrate(50);
+              code(m, x);
+            }
+          }
+        }
+      } catch (e) {}
+      if (c.on) setTimeout(loop, 100);
+    };
+    loop();
+  } catch (e) {
+    closeCam(); releaseCam();
+    toast('Камера недоступна или доступ запрещён', 'er');
+  }
 }
 
+function closeCam() {
+  if (CB) { CB.on = 0; CB = null; clearTimeout(camIdle); camIdle = setTimeout(releaseCam, CAM_IDLE_MS); }
+  const v = $('#cv'); if (v) { v.pause(); v.srcObject = null; } // дорожки камеры не останавливаем — иначе iOS снова спросит доступ
+  $('#cam').hidden = true;
+}
+
+
+/* 
+=========================================================
+ 7. РЕДАКТОР ТОВАРА (Создание и Изменение)
+=========================================================
+*/
 function pform(p, cb) {
   T = { photo: p.photo || null, cb }; const e = !!p.id;
   modal(`<h2>${e ? 'Товар' : 'Новый товар'}</h2>
   <div class="r" style="margin-bottom:12px;justify-content:center">
     <div id="pp" onclick="$('#pf').click()" style="cursor:pointer;width:100%;background:var(--bg);border-radius:12px;overflow:hidden;text-align:center">
-      ${p.photo ? `<img src="${p.photo}" style="width:100%;max-height:220px;object-fit:contain;display:block" alt="">` : `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`}
+      ${p.photo ? `<img src="${esc(p.photo)}" style="width:100%;max-height:220px;object-fit:contain;display:block" alt="">` : `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`}
     </div>
     <input id="pf" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
   </div>
@@ -305,6 +502,7 @@ function pform(p, cb) {
   <div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="psave('${p.id || ''}')">Сохранить</button></div>`);
 }
 
+// Изменение размера и компрессия фотографии перед отправкой
 function photo(inp) {
   const f = inp.files[0]; if (!f) return;
   if (!/^image\//.test(f.type) || f.size > 20e6) return toast('Нужна картинка до 20 МБ', 'er');
@@ -320,6 +518,7 @@ function photo(inp) {
   im.onerror = () => toast('Не удалось прочитать фото', 'er'); im.src = u;
 }
 
+// Сохранение карточки товара в БД
 function psave(id) {
   run(async () => {
     const n = $('#fn').value.trim(), b = $('#fb').value.trim(), r = num($('#fp').value);
@@ -334,7 +533,15 @@ function psave(id) {
   });
 }
 
+/* 
+=========================================================
+ 8. ТРАНЗАКЦИОННЫЕ ФУНКЦИИ (Сохранение корзин в БД)
+=========================================================
+*/
+// Изменение количества товара в корзине
 function sq(i, d) { const l = S.cart[i], q = l.q + d; if (q < 1) S.cart.splice(i, 1); else l.q = q; render(); }
+
+// Оформление продажи (передача массива на RPC функцию)
 function sell() {
   const c = S.cart; if (!c.length) return;
   if (c.some(l => l.price === '' || !(+l.price >= 0))) return toast('Укажите цену для каждого товара', 'er');
@@ -344,6 +551,8 @@ function sell() {
     S.cart = []; await load(); await loadDocs('s'); toast('Продажа сохранена', 'ok');
   });
 }
+
+// Оформление закупки
 function buyAsk() {
   const c = S.pcart;
   if (c.some(l => l.cost === '' || !(+l.cost >= 0) || !(parseInt(l.q) > 0))) return toast('Укажите цену и количество для каждой позиции', 'er');
@@ -353,6 +562,8 @@ function buyAsk() {
     S.pcart = []; await load(); await loadDocs('p'); toast('Закупка сохранена', 'ok');
   }));
 }
+
+// Применение инвентаризации (сверки)
 function setc(id, v) { const n = parseInt(v); if (!(n >= 0)) return toast('Введите число 0 или больше', 'er'); S.inv[id].cnt = n; render(); }
 function invOk() {
   const it = Object.entries(S.inv).map(([id, x]) => ({ id, cnt: x.cnt, cost: x.cost === '' ? null : +x.cost }));
@@ -363,9 +574,15 @@ function invOk() {
   });
 }
 
+/* 
+=========================================================
+ 9. АВТОРИЗАЦИЯ И СТАРТ ПРИЛОЖЕНИЯ
+=========================================================
+*/
 async function startApp() {
   if (!tg || !tg.initData) { $('#app').innerHTML = '<h1>Откройте в Telegram</h1><p class="mu">Приложение работает только внутри Telegram.</p>'; return; }
   try {
+    // Авторизация через Edge Function, которая проверяет подпись Telegram
     const { data, error } = await sb.functions.invoke('auth-store', { body: { initData: tg.initData } });
     if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (e) {} throw new Error(m); }
     if (!data || !data.store_id) throw new Error('Ответ сервера: ' + JSON.stringify(data));
@@ -374,14 +591,14 @@ async function startApp() {
     STORE = data.store_id; 
     USER = data.telegram_id;
     
+    // Пересоздаем клиент с авторизационным JWT токеном
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + data.token } } });
     
-    // ДОБАВЛЕНО: Запрос роли из базы данных
-    const { data: userData } = await sb.from('users').select('role').eq('telegram_id', USER).maybeSingle();
-    if (userData && userData.role === 'cashier') {
-      document.body.classList.add('cashier-mode');
-    }
+    // Роль приходит в ответе функции входа (таблица users закрыта политиками для клиента)
+    ROLE = data.role;
+    if (ROLE === 'cashier') document.body.classList.add('cashier-mode');
 
+    // Проверка статуса подписки магазина
     const { data: st } = await sb.from('stores').select('name,sub_status').eq('id', STORE).maybeSingle();
     if (st) {
       STORE_NAME = st.name || STORE_NAME;
@@ -391,10 +608,13 @@ async function startApp() {
     await load();
     await render();
     toast('Вход выполнен', 'ok');
+    warmScanner();
   } catch (e) {
     $('#app').innerHTML = `<h1>Ошибка входа</h1><p class="mu">${esc(e.message)}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
   }
 }
+
+// Запуск
 startApp();
 </script>
 </body>
