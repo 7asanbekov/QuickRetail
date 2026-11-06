@@ -283,25 +283,28 @@ function ask(t, y) { ASK = y; modal(`<h2>${esc(t)}</h2><div class="row"><button 
 =========================================================
 */
 
-/* Загрузка полного каталога товаров магазина в локальный кэш (пагинация по 1000) */
-async function load() {
+/* Постраничная выборка: грузит все строки запроса пачками по 1000 */
+async function pageAll(q) {
   let all = [], f = 0;
   for (;;) {
-    const { data, error } = await sb.from('products').select('*').eq('store_id', STORE).order('name').range(f, f + 999);
+    const { data, error } = await q().range(f, f + 999);
     if (error) throw error;
     all = all.concat(data);
     if (data.length < 1000) break;
     f += 1000;
   }
-  // остаток и себестоимость — из таблицы branch_stock текущего филиала (в products их больше нет)
-  const bs = {}; f = 0;
-  for (;;) {
-    const { data, error } = await sb.from('branch_stock').select('product_id,stock_quantity,cost_price').eq('branch_id', BRANCH).range(f, f + 999);
-    if (error) throw error;
-    data.forEach(r => bs[r.product_id] = r);
-    if (data.length < 1000) break;
-    f += 1000;
-  }
+  return all;
+}
+
+/* Загрузка полного каталога товаров магазина в локальный кэш.
+   Каталог и остатки филиала независимы друг от друга, поэтому грузятся параллельно. */
+async function load() {
+  const [all, bsRows] = await Promise.all([
+    pageAll(() => sb.from('products').select('*').eq('store_id', STORE).order('name')),
+    // остаток и себестоимость — из таблицы branch_stock текущего филиала (в products их больше нет)
+    pageAll(() => sb.from('branch_stock').select('product_id,stock_quantity,cost_price').eq('branch_id', BRANCH))
+  ]);
+  const bs = {}; bsRows.forEach(r => bs[r.product_id] = r);
   P = all.map(p => ({ ...p, stock_quantity: bs[p.id] ? bs[p.id].stock_quantity : 0, cost_price: bs[p.id] ? +bs[p.id].cost_price : 0 }));
 }
 
@@ -724,6 +727,8 @@ async function enterStore(d) {
 async function enterBranch(b) {
   BRANCH = b.id; try { localStorage.setItem('branch_' + STORE, b.id); } catch (e) {}
   S.rb = null; S.docs = {}; S.cart = []; S.pcart = []; S.inv = {}; S.win = null; S.tab = 'home';
+  $('#nav').style.display = 'none'; $('#win').hidden = true;
+  $('#app').innerHTML = '<h1>Загружаем товары…</h1>';
   try { await load(); await render(); } catch (e) { toast(e.message || String(e), 'er'); }
 }
 async function chooseStore() {
