@@ -124,6 +124,7 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 #win[hidden]{display:none}
 #win .wi{max-width:640px;margin:0 auto}
 .wh{display:flex;align-items:center;gap:12px;margin-bottom:6px}.wh b{font-size:20px}
+.sm{min-height:40px;font-size:14px;padding:0 10px;flex:none}
 </style>
 <!-- Подключение SDK Telegram Web App -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -202,9 +203,11 @@ if (tg) { tg.ready(); tg.expand(); }
 const SUPABASE_URL = 'https://zejpqdzashqaudcxdpoh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5FcwXPo1yU6BzYhmmfVQcA_DNv9U7ku';
 let sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const sb0 = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); // клиент без токена — только для входа (auth-store)
 
 // Глобальное состояние приложения
-let STORE = null,       // ID магазина
+let BRANCH = null, BRANCHES = [], IS_ADMIN = false,   // текущий филиал, доступные филиалы, администратор платформы
+    STORE = null,       // ID магазина
     USER = null,        // ID пользователя (Telegram)
     ROLE = null,        // Роль (owner/cashier)
     STORE_NAME = 'Сегодня',
@@ -214,7 +217,7 @@ let STORE = null,       // ID магазина
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.1.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
+const APP_VERSION = '1.2.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 // Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
 // при запуске показывалась на экране, а не молча останавливала приложение.
@@ -245,6 +248,7 @@ const S = {
   cart: [],             // Корзина продажи (sale)
   pcart: [],            // Корзина закупки (buy)
   inv: {},              // Список товаров в сверке (inv)
+  rb: null,             // Филиал в отчётах: id или 'all'
   from: today(),        // Начальная дата для отчетов
   to: today()           // Конечная дата для отчетов 
 };
@@ -261,7 +265,10 @@ function toast(m, k) {
 async function run(fn) {
   if (busy) return; busy = true;
   try { await fn(); }
-  catch (e) { toast(/jwt|token/i.test(e.message||'') ? 'Сессия истекла' : (e.message || String(e)), 'er'); } 
+  catch (e) {
+    if (/jwt|token|expired/i.test(e.message || '')) { try { await relogin(); toast('Сессия обновлена — повторите действие'); } catch (e2) { toast('Сессия истекла — откройте приложение заново', 'er'); } }
+    else toast(e.message || String(e), 'er');
+  } 
   finally { busy = false; render(); }
 }
 
@@ -286,15 +293,25 @@ async function load() {
     if (data.length < 1000) break;
     f += 1000;
   }
-  P = all;
+  // остаток и себестоимость — из таблицы branch_stock текущего филиала (в products их больше нет)
+  const bs = {}; f = 0;
+  for (;;) {
+    const { data, error } = await sb.from('branch_stock').select('product_id,stock_quantity,cost_price').eq('branch_id', BRANCH).range(f, f + 999);
+    if (error) throw error;
+    data.forEach(r => bs[r.product_id] = r);
+    if (data.length < 1000) break;
+    f += 1000;
+  }
+  P = all.map(p => ({ ...p, stock_quantity: bs[p.id] ? bs[p.id].stock_quantity : 0, cost_price: bs[p.id] ? +bs[p.id].cost_price : 0 }));
 }
 
 /* Выгрузка статистики за период */
-async function stats(f, t) {
+async function stats(f, t, ids) {
+  ids = ids || [BRANCH];
   const a = new Date(f + 'T00:00:00').toISOString(), b = new Date(t + 'T23:59:59.999').toISOString();
   const { data, error } = await sb.from('receipts')
     .select('id,total_amount,total_cogs,created_at,receipt_items(product_id,quantity,price_at_sale)')
-    .eq('store_id', STORE).eq('deleted', false).gte('created_at', a).lte('created_at', b).order('created_at', { ascending: false }).limit(1000);
+    .eq('store_id', STORE).in('branch_id', ids).eq('deleted', false).gte('created_at', a).lte('created_at', b).order('created_at', { ascending: false }).limit(1000);
   if (error) throw error;
   
   const o = { n: data.length, rev: 0, cost: 0, u: 0, by: {}, list: data };
@@ -332,10 +349,18 @@ function openWin(w) { S.win = w; render(); const e = $('#win'); if (e) e.scrollT
 function closeWin() { S.win = null; render(); }
 if (tg && tg.BackButton) tg.BackButton.onClick(() => { if (S.win) closeWin(); });
 
+/* ===== Филиалы ===== */
+const RB = () => S.rb === 'all' ? BRANCHES.map(b => b.id) : [S.rb || BRANCH];
+const switchers = () => {
+  const bn = (BRANCHES.find(b => b.id === BRANCH) || {}).name || '';
+  return `<div class="row" style="margin-top:-4px"><small style="flex:1;align-self:center">Филиал: <b>${esc(bn)}</b></small>${BRANCHES.length > 1 ? '<button class="sm" onclick="chooseBranch()">Сменить филиал</button>' : ''}${IS_ADMIN ? '<button class="sm" onclick="chooseStore()">Сменить магазин</button>' : ''}</div>`;
+};
+const rbSel = () => BRANCHES.length < 2 ? '' : `<label style="margin:0 0 8px">Филиал<select onchange="S.rb=this.value;render()" style="width:100%;min-height:48px;border-radius:12px;border:1px solid var(--br);background:var(--cd);color:var(--tx);padding:0 12px;font:inherit"><option value="all" ${S.rb === 'all' ? 'selected' : ''}>Все филиалы</option>${BRANCHES.map(b => `<option value="${b.id}" ${(S.rb || BRANCH) === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>`;
+
 const V = {
   async home() {
     const a = await stats(today(), today()), low = P.filter(p => p.stock_quantity <= LOW);
-    return `<h1>${esc(STORE_NAME)}</h1><div class="g owner-only"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}<p class="mu" style="text-align:center"><small>Версия ${APP_VERSION}</small></p>`;
+    return `<h1>${esc(STORE_NAME)}</h1>${switchers()}<div class="g owner-only"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}<p class="mu" style="text-align:center"><small>Версия ${APP_VERSION}</small></p>`;
   },
   prod() { 
     return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="scanBarcode('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; 
@@ -370,8 +395,8 @@ const V = {
   buy() { return newBtn('buy', S.pcart.length) + journal('p'); },
   inv() { return newBtn('inv', Object.keys(S.inv).length) + journal('i'); },
   async rep() {
-    const a = await stats(S.from, S.to);
-    return `<h1>Отчёты</h1><div class="r"><label style="flex:1;margin:0">С<input type="date" value="${S.from}" onchange="S.from=this.value||today();render()"></label><label style="flex:1;margin:0">По<input type="date" value="${S.to}" onchange="S.to=this.value||today();render()"></label></div>
+    const a = await stats(S.from, S.to, RB());
+    return `<h1>Отчёты</h1>${rbSel()}<div class="r"><label style="flex:1;margin:0">С<input type="date" value="${S.from}" onchange="S.from=this.value||today();render()"></label><label style="flex:1;margin:0">По<input type="date" value="${S.to}" onchange="S.to=this.value||today();render()"></label></div>
     <div class="g" style="margin-top:10px">
       <div class="c w"><small>Выручка</small><b>${fmt(a.rev)}</b></div>
       <div class="c"><small>Себестоимость</small><b>${fmt(a.cost)}</b></div>
@@ -425,7 +450,7 @@ const DN = { s: 'Продажа', p: 'Закупка', i: 'Сверка' }, DT =
 
 /* Загрузка ленты документов для текущей вкладки */
 async function loadDocs(k) {
-  let q = sb.from(DK[k][0]).select('*,' + DK[k][1]).eq('store_id', STORE).order('created_at', { ascending: false }).limit(S.jall ? 300 : 100);
+  let q = sb.from(DK[k][0]).select('*,' + DK[k][1]).eq('store_id', STORE).eq('branch_id', BRANCH).order('created_at', { ascending: false }).limit(S.jall ? 300 : 100);
   if (!S.jall) q = q.gte('created_at', new Date(today() + 'T00:00:00').toISOString());
   const { data, error } = await q; if (error) throw error;
   S.docs[k] = data;
@@ -617,7 +642,7 @@ function psave(id) {
     const row_data = { name: n || null, barcode: b || null, retail_price: r, photo: T.photo || null };
     const cb = T && T.cb; let p = null;
     if (id) { const { error } = await sb.from('products').update(row_data).eq('id', id).eq('store_id', STORE); if (error) throw error; } 
-    else { const { data, error } = await sb.from('products').insert({ ...row_data, store_id: STORE, stock_quantity: 0, cost_price: 0 }).select().single(); if (error) throw error; p = data; }
+    else { const { data, error } = await sb.from('products').insert({ ...row_data, store_id: STORE }).select().single(); if (error) throw error; p = data; }
     closeModal(); await load(); toast('Товар сохранён', 'ok'); if (cb && p) cb(G(p.id));
   });
 }
@@ -635,7 +660,7 @@ function sell() {
   const c = S.cart; if (!c.length) return;
   if (c.some(l => l.price === '' || !(+l.price >= 0))) return toast('Укажите цену для каждого товара', 'er');
   run(async () => {
-    const { error } = await sb.rpc('sell', { p_store: STORE, p_user: USER, p_items: c.map(l => ({ id: l.id, q: l.q, price: +l.price })) });
+    const { error } = await sb.rpc('sell', { p_branch: BRANCH, p_items: c.map(l => ({ id: l.id, q: l.q, price: +l.price })) });
     if (error) throw error;
     S.cart = []; S.win = null; await load(); await loadDocs('s'); toast('Продажа сохранена', 'ok');
   });
@@ -646,7 +671,7 @@ function buyAsk() {
   const c = S.pcart;
   if (c.some(l => l.cost === '' || !(+l.cost >= 0) || !(parseInt(l.q) > 0))) return toast('Укажите цену и количество для каждой позиции', 'er');
   ask('Подтвердить закупку? Остатки увеличатся.', () => run(async () => {
-    const { error } = await sb.rpc('receive', { p_store: STORE, p_user: USER, p_items: c.map(l => ({ id: l.id, q: parseInt(l.q), cost: r2(+l.cost) })) });
+    const { error } = await sb.rpc('receive', { p_branch: BRANCH, p_items: c.map(l => ({ id: l.id, q: parseInt(l.q), cost: r2(+l.cost) })) });
     if (error) throw error;
     S.pcart = []; S.win = null; await load(); await loadDocs('p'); toast('Закупка сохранена', 'ok');
   }));
@@ -657,7 +682,7 @@ function setc(id, v) { const n = parseInt(v); if (!(n >= 0)) return toast('Вв�
 function invOk() {
   const it = Object.entries(S.inv).map(([id, x]) => ({ id, cnt: x.cnt, cost: x.cost === '' ? null : +x.cost }));
   run(async () => {
-    const { error } = await sb.rpc('adjust', { p_store: STORE, p_user: USER, p_items: it });
+    const { error } = await sb.rpc('adjust', { p_branch: BRANCH, p_items: it });
     if (error) throw error;
     S.inv = {}; S.win = null; await load(); await loadDocs('i'); toast('Сверка остатков применена', 'ok');
   });
@@ -668,39 +693,62 @@ function invOk() {
  9. АВТОРИЗАЦИЯ И СТАРТ ПРИЛОЖЕНИЯ
 =========================================================
 */
+/* Вход в функцию auth-store. Админ платформы без store_id получает список магазинов, с store_id — токен на выбранный магазин */
+async function authCall(storeId) {
+  const { data, error } = await sb0.functions.invoke('auth-store', { body: { initData: tg.initData, store_id: storeId || undefined } });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (e) {} throw new Error(m); }
+  if (!data) throw new Error('Пустой ответ сервера');
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+function applyAuth(d) {
+  if (!d.token) throw new Error('Сервер не выдал токен — обновите функцию auth-store');
+  STORE = d.store_id; USER = d.telegram_id; ROLE = d.role; IS_ADMIN = !!d.is_admin; STORE_NAME = d.store_name || STORE_NAME; BRANCHES = d.branches || [];
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + d.token } } });
+  document.body.classList.toggle('cashier-mode', ROLE === 'cashier');
+}
+async function relogin() { applyAuth(await authCall(IS_ADMIN ? STORE : null)); }
+
+function showPicker(title, items, onPick, extra) {
+  $('#nav').style.display = 'none'; $('#win').hidden = true;
+  $('#app').innerHTML = `<h1>${esc(title)}</h1>` + items.map((x, i) => `<button class="big" style="margin:6px 0" onclick="PICK(${i})">${esc(x.name)}${x.sub ? ' <small>' + esc(x.sub) + '</small>' : ''}</button>`).join('') + (extra || '');
+  window.PICK = i => onPick(items[i]);
+}
+async function enterStore(d) {
+  applyAuth(d);
+  let saved = null; try { saved = localStorage.getItem('branch_' + STORE); } catch (e) {}
+  const b = BRANCHES.find(x => x.id === saved) || (BRANCHES.length === 1 ? BRANCHES[0] : null);
+  if (b) return enterBranch(b);
+  showPicker('Выберите филиал', BRANCHES, enterBranch, IS_ADMIN ? '<button class="big" onclick="chooseStore()">← Другой магазин</button>' : '');
+}
+async function enterBranch(b) {
+  BRANCH = b.id; try { localStorage.setItem('branch_' + STORE, b.id); } catch (e) {}
+  S.rb = null; S.docs = {}; S.cart = []; S.pcart = []; S.inv = {}; S.win = null; S.tab = 'home';
+  try { await load(); await render(); } catch (e) { toast(e.message || String(e), 'er'); }
+}
+async function chooseStore() {
+  try {
+    const d = await authCall(null);
+    showPicker('Выберите магазин', d.stores.map(s => ({ id: s.id, name: s.name, sub: s.sub_status === 'inactive' ? 'подписка неактивна' : '' })),
+      async s => { try { await enterStore(await authCall(s.id)); } catch (e) { toast(e.message, 'er'); } });
+  } catch (e) { toast(e.message, 'er'); }
+}
+function chooseBranch() { showPicker('Выберите филиал', BRANCHES, enterBranch, '<button class="big" onclick="render()">Отмена</button>'); }
+
+/* Старт приложения */
 async function startApp() {
   if (!tg || !tg.initData) { $('#app').innerHTML = '<h1>Откройте в Telegram</h1><p class="mu">Приложение работает только внутри Telegram.</p>'; return; }
   try {
-    // Авторизация через Edge Function, которая проверяет подпись Telegram
-    const { data, error } = await sb.functions.invoke('auth-store', { body: { initData: tg.initData } });
-    if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (e) {} throw new Error(m); }
-    if (!data || !data.store_id) throw new Error('Ответ сервера: ' + JSON.stringify(data));
-    if (!data.token) throw new Error('Сервер не выдал токен — обновите функцию auth-store');
-    
-    STORE = data.store_id; 
-    USER = data.telegram_id;
-    
-    // Пересоздаем клиент с авторизационным JWT токеном
-    sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + data.token } } });
-    
-    // Роль приходит в ответе функции входа (таблица users закрыта политиками для клиента)
-    ROLE = data.role;
-    if (ROLE === 'cashier') document.body.classList.add('cashier-mode');
-
-    // Проверка статуса подписки магазина
-    const { data: st } = await sb.from('stores').select('name,sub_status').eq('id', STORE).maybeSingle();
-    if (st) {
-      STORE_NAME = st.name || STORE_NAME;
-      if (st.sub_status === 'inactive') { $('#app').innerHTML = '<h1>Подписка неактивна</h1><p class="mu">Обратитесь к владельцу сервиса.</p>'; return; }
-    }
-    
-    await load();
-    await render();
-    toast('Вход выполнен', 'ok');
-    warmScanner();
+    const d = await authCall(null);
+    if (d.pick_store) { IS_ADMIN = true; await chooseStoreFrom(d); return; }
+    await enterStore(d); toast('Вход выполнен', 'ok'); warmScanner();
   } catch (e) {
     $('#app').innerHTML = `<h1>Ошибка входа</h1><p class="mu">${esc(e.message)}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
   }
+}
+async function chooseStoreFrom(d) {
+  showPicker('Выберите магазин', d.stores.map(s => ({ id: s.id, name: s.name, sub: s.sub_status === 'inactive' ? 'подписка неактивна' : '' })),
+    async s => { try { await enterStore(await authCall(s.id)); warmScanner(); } catch (e) { toast(e.message, 'er'); } });
 }
 
 // Запуск
