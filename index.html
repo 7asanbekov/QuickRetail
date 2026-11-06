@@ -118,6 +118,12 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 
 /* Скрываем элементы с классом owner-only, если включен режим кассира */
 .cashier-mode .owner-only { display: none !important; }
+
+/* Окно создания документа (продажа / закупка / сверка): закрывает список и нижнее меню */
+#win{position:fixed;inset:0;z-index:6;background:var(--bg);overflow-y:auto;padding:calc(14px + env(safe-area-inset-top,0px)) 14px calc(28px + env(safe-area-inset-bottom,0px))}
+#win[hidden]{display:none}
+#win .wi{max-width:640px;margin:0 auto}
+.wh{display:flex;align-items:center;gap:12px;margin-bottom:6px}.wh b{font-size:20px}
 </style>
 <!-- Подключение SDK Telegram Web App -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -132,6 +138,8 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 <div id="app"><p class="mu" style="text-align:center;padding-top:40px">Подключение к серверу...</p></div>
 
 <!-- Нижнее меню навигации -->
+<div id="win" hidden></div>
+
 <nav id="nav">
   <button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button>
   <button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button>
@@ -206,7 +214,7 @@ let STORE = null,       // ID магазина
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.0.9'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
+const APP_VERSION = '1.1.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 // Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
 // при запуске показывалась на экране, а не молча останавливала приложение.
@@ -317,6 +325,13 @@ const row = p => `<div class="c r" onclick="pform(G('${p.id}'))" style="cursor:p
 const scanbar = m => `<div class="sb"><input id="sq" placeholder="Штрихкод или название" inputmode="search" onkeydown="if(event.key==='Enter')look('${m}')"><button onclick="look('${m}')">Найти</button><button aria-label="Камера" onclick="scanBarcode('${m}')">📷</button></div>`;
 
 // Объект V содержит функции отрисовки для каждой вкладки навигации
+/* Кнопка «Новый документ» на вкладке и заголовки окна создания */
+const WN = { sale: ['Новая продажа', 'Продолжить продажу', 'Продажа'], buy: ['Новая закупка', 'Продолжить закупку', 'Закупка'], inv: ['Новая сверка', 'Продолжить сверку', 'Сверка остатков'] };
+const newBtn = (w, n) => `<button class="pb big" style="margin:0 0 8px" onclick="openWin('${w}')">${n ? WN[w][1] + ' (' + n + ')' : WN[w][0]}</button>`;
+function openWin(w) { S.win = w; render(); const e = $('#win'); if (e) e.scrollTop = 0; }
+function closeWin() { S.win = null; render(); }
+if (tg && tg.BackButton) tg.BackButton.onClick(() => { if (S.win) closeWin(); });
+
 const V = {
   async home() {
     const a = await stats(today(), today()), low = P.filter(p => p.stock_quantity <= LOW);
@@ -325,32 +340,35 @@ const V = {
   prod() { 
     return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="scanBarcode('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; 
   },
-  sale() {
+  saleForm() {
     let t = 0;
     const h = S.cart.map((l, i) => {
       const p = G(l.id); t += l.q * (+l.price || 0);
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small class="${p && p.stock_quantity < l.q ? 'lo' : ''}">остаток ${p ? p.stock_quantity : 0}</small></div><button class="x" aria-label="Убрать" onclick="S.cart.splice(${i},1);render()">✕</button></div>
       <div class="r" style="margin-top:8px"><button class="x" onclick="sq(${i},-1)">−</button><b class="q">${l.q}</b><button class="x" onclick="sq(${i},1)">+</button><input class="pi" inputmode="decimal" aria-label="Цена" value="${esc(l.price)}" onchange="S.cart[${i}].price=this.value.replace(',','.');render()"><span class="lt">${fmt(l.q * (+l.price || 0))}</span></div></div>`;
     }).join('');
-    return scanbar('sale') + (h ? h + `<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>` : '') + journal('s');
+    return scanbar('sale') + (h ? h + `<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>` : '');
   },
-  buy() {
+  buyForm() {
     let u = 0, t = 0;
     const h = S.pcart.map((l, i) => {
       const p = G(l.id); u += +l.q || 0; t += (+l.q || 0) * (+l.cost || 0);
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small>остаток ${p ? p.stock_quantity : 0}${p && p.cost_price ? ' · себестоимость ' + fmt(p.cost_price) : ''}</small></div><button class="x" aria-label="Убрать" onclick="S.pcart.splice(${i},1);render()">✕</button></div>
       <div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Закупочная цена за шт<input inputmode="decimal" value="${esc(l.cost)}" onchange="S.pcart[${i}].cost=this.value.replace(',','.');render()"></label><label style="flex:1;margin:0">Кол-во<input inputmode="numeric" value="${esc(l.q)}" onchange="S.pcart[${i}].q=this.value;render()"></label></div></div>`;
     }).join('');
-    return scanbar('buy') + (h ? h + `<div class="c"><div class="bar"><span>Позиций / штук</span><b>${S.pcart.length} / ${u}</b></div><div class="bar"><span>Сумма закупки</span><b>${fmt(t)}</b></div></div><button class="pb big" onclick="buyAsk()">Подтвердить закупку</button>` : '') + journal('p');
+    return scanbar('buy') + (h ? h + `<div class="c"><div class="bar"><span>Позиций / штук</span><b>${S.pcart.length} / ${u}</b></div><div class="bar"><span>Сумма закупки</span><b>${fmt(t)}</b></div></div><button class="pb big" onclick="buyAsk()">Подтвердить закупку</button>` : '');
   },
-  inv() {
+  invForm() {
     const it = Object.entries(S.inv);
-    return `<h1>Сверка остатков</h1>` + scanbar('inv') + it.map(([id, x]) => {
+    return scanbar('inv') + it.map(([id, x]) => {
       const p = G(id), d = x.cnt - p.stock_quantity;
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small>по учёту ${p.stock_quantity} шт</small></div><b class="${d < 0 ? 'lo' : d > 0 ? 'wa' : 'ok'}">${d > 0 ? '+' : ''}${d}</b></div>
       <div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Посчитано<input inputmode="numeric" value="${x.cnt}" onchange="setc('${id}',this.value)"></label>${p.stock_quantity <= 0 ? `<label style="flex:1;margin:0">Закупочная цена<input inputmode="decimal" value="${esc(x.cost)}" onchange="S.inv['${id}'].cost=this.value.replace(',','.')"></label>` : ''}<button class="x" aria-label="Убрать" onclick="delete S.inv['${id}'];render()">✕</button></div></div>`;
-    }).join('') + (it.length ? `<button class="pb big" onclick="ask('Применить сверку остатков? Остатки изменятся.',invOk)">Подтвердить сверку</button>` : '') + journal('i');
+    }).join('') + (it.length ? `<button class="pb big" onclick="ask('Применить сверку остатков? Остатки изменятся.',invOk)">Подтвердить сверку</button>` : '');
   },
+  sale() { return newBtn('sale', S.cart.length) + journal('s'); },
+  buy() { return newBtn('buy', S.pcart.length) + journal('p'); },
+  inv() { return newBtn('inv', Object.keys(S.inv).length) + journal('i'); },
   async rep() {
     const a = await stats(S.from, S.to);
     return `<h1>Отчёты</h1><div class="r"><label style="flex:1;margin:0">С<input type="date" value="${S.from}" onchange="S.from=this.value||today();render()"></label><label style="flex:1;margin:0">По<input type="date" value="${S.to}" onchange="S.to=this.value||today();render()"></label></div>
@@ -372,12 +390,18 @@ async function render() {
   const t = S.tab, h = await V[t]();
   if (t !== S.tab) return;
   $('#app').innerHTML = h;
+  const w = $('#win');
+  if (S.win && V[S.win + 'Form']) {
+    w.innerHTML = `<div class="wi"><div class="wh"><button onclick="closeWin()">← Назад</button><b>${WN[S.win][2]}</b></div>` + V[S.win + 'Form']() + '</div>';
+    w.hidden = false;
+  } else { w.hidden = true; w.innerHTML = ''; }
+  try { if (tg && tg.BackButton) S.win ? tg.BackButton.show() : tg.BackButton.hide(); } catch (e) {}
   if (t === 'prod') plist();
 }
 
 /* Смена вкладки */
 function go(t) { 
-  S.tab = t; 
+  S.win = null; S.tab = t; 
   render().catch(e => toast(e.message, 'er')); 
   // Если для вкладки есть документы (чеки), загружаем их
   if (TK[t]) loadDocs(TK[t]).then(render).catch(e => toast(e.message, 'er')); 
@@ -613,7 +637,7 @@ function sell() {
   run(async () => {
     const { error } = await sb.rpc('sell', { p_store: STORE, p_user: USER, p_items: c.map(l => ({ id: l.id, q: l.q, price: +l.price })) });
     if (error) throw error;
-    S.cart = []; await load(); await loadDocs('s'); toast('Продажа сохранена', 'ok');
+    S.cart = []; S.win = null; await load(); await loadDocs('s'); toast('Продажа сохранена', 'ok');
   });
 }
 
@@ -624,7 +648,7 @@ function buyAsk() {
   ask('Подтвердить закупку? Остатки увеличатся.', () => run(async () => {
     const { error } = await sb.rpc('receive', { p_store: STORE, p_user: USER, p_items: c.map(l => ({ id: l.id, q: parseInt(l.q), cost: r2(+l.cost) })) });
     if (error) throw error;
-    S.pcart = []; await load(); await loadDocs('p'); toast('Закупка сохранена', 'ok');
+    S.pcart = []; S.win = null; await load(); await loadDocs('p'); toast('Закупка сохранена', 'ok');
   }));
 }
 
@@ -635,7 +659,7 @@ function invOk() {
   run(async () => {
     const { error } = await sb.rpc('adjust', { p_store: STORE, p_user: USER, p_items: it });
     if (error) throw error;
-    S.inv = {}; await load(); await loadDocs('i'); toast('Сверка остатков применена', 'ok');
+    S.inv = {}; S.win = null; await load(); await loadDocs('i'); toast('Сверка остатков применена', 'ok');
   });
 }
 
