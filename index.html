@@ -125,6 +125,14 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 #win .wi{max-width:640px;margin:0 auto}
 .wh{display:flex;align-items:center;gap:12px;margin-bottom:6px}.wh b{font-size:20px}
 .sm{min-height:40px;font-size:14px;padding:0 10px;flex:none}
+
+/* Каталог, категории, избранное */
+select{width:100%;min-height:48px;border-radius:12px;border:1px solid var(--br);background:var(--cd);color:var(--tx);padding:0 12px;font:inherit}label select{margin-top:4px}
+.tabs{display:flex;gap:6px;margin:4px 0 8px}.tabs button{flex:1;min-height:44px;font-size:14px;padding:0 4px}.tabs button.on{background:var(--pr);color:var(--pt);border-color:var(--pr);font-weight:600}
+.cg{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cg button{min-height:68px;text-align:left;padding:8px 12px;white-space:normal}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px}.chips button{flex:none;min-height:38px;padding:0 14px;border-radius:19px;font-size:14px}
+.fv{min-height:40px;width:40px;padding:0;flex:none;border:0;background:none;font-size:22px;color:var(--wa)}
+#cb{position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 30%);padding-top:6px}
 </style>
 <!-- Подключение SDK Telegram Web App -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -217,7 +225,7 @@ let BRANCH = null, BRANCHES = [], IS_ADMIN = false,   // текущий фили
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.2.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
+const APP_VERSION = '1.3.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 // Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
 // при запуске показывалась на экране, а не молча останавливала приложение.
@@ -348,7 +356,7 @@ const scanbar = m => `<div class="sb"><input id="sq" placeholder="Штрихко
 /* Кнопка «Новый документ» на вкладке и заголовки окна создания */
 const WN = { sale: ['Новая продажа', 'Продолжить продажу', 'Продажа'], buy: ['Новая закупка', 'Продолжить закупку', 'Закупка'], inv: ['Новая сверка', 'Продолжить сверку', 'Сверка остатков'] };
 const newBtn = (w, n) => `<button class="pb big" style="margin:0 0 8px" onclick="openWin('${w}')">${n ? WN[w][1] + ' (' + n + ')' : WN[w][0]}</button>`;
-function openWin(w) { S.win = w; render(); const e = $('#win'); if (e) e.scrollTop = 0; }
+function openWin(w) { if (w === 'sale') { kreset('sale'); K.view = S.cart.length ? 'cart' : 'cat'; } S.win = w; render(); const e = $('#win'); if (e) e.scrollTop = 0; }
 function closeWin() { S.win = null; render(); }
 if (tg && tg.BackButton) tg.BackButton.onClick(() => { if (S.win) closeWin(); });
 
@@ -366,7 +374,7 @@ const V = {
     return `<h1>${esc(STORE_NAME)}</h1>${switchers()}<div class="g owner-only"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}<p class="mu" style="text-align:center"><small>Версия ${APP_VERSION}</small></p>`;
   },
   prod() { 
-    return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="x" aria-label="Сканер" onclick="scanBarcode('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; 
+    return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({category_id:kcur()})">Новый товар</button><button class="owner-only" onclick="catMgr()">Категории</button><button class="x" aria-label="Сканер" onclick="scanBarcode('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div>${kui()}`; 
   },
   saleForm() {
     let t = 0;
@@ -375,7 +383,8 @@ const V = {
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small class="${p && p.stock_quantity < l.q ? 'lo' : ''}">остаток ${p ? p.stock_quantity : 0}</small></div><button class="x" aria-label="Убрать" onclick="S.cart.splice(${i},1);render()">✕</button></div>
       <div class="r" style="margin-top:8px"><button class="x" onclick="sq(${i},-1)">−</button><b class="q">${l.q}</b><button class="x" onclick="sq(${i},1)">+</button><input class="pi" inputmode="decimal" aria-label="Цена" value="${esc(l.price)}" onchange="S.cart[${i}].price=this.value.replace(',','.');render()"><span class="lt">${fmt(l.q * (+l.price || 0))}</span></div></div>`;
     }).join('');
-    return scanbar('sale') + (h ? h + `<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>` : '');
+    const cartV = h ? h + `<div class="tot"><span>Итого</span><b>${fmt(t)}</b></div><button class="pb big" onclick="sell()">Продать</button>` : '<p class="mu">Корзина пуста — выберите товар в каталоге или отсканируйте код</p>';
+    return scanbar('sale') + salTabs() + (K.view === 'cart' ? cartV : kui() + '<div id="cb"></div>');
   },
   buyForm() {
     let u = 0, t = 0;
@@ -424,23 +433,18 @@ async function render() {
     w.hidden = false;
   } else { w.hidden = true; w.innerHTML = ''; }
   try { if (tg && tg.BackButton) S.win ? tg.BackButton.show() : tg.BackButton.hide(); } catch (e) {}
-  if (t === 'prod') plist();
+  if (t === 'prod' || (S.win === 'sale' && K.view !== 'cart')) kensure();
 }
 
 /* Смена вкладки */
 function go(t) { 
-  S.win = null; S.tab = t; 
+  S.win = null; S.tab = t; if (t === 'prod') kreset('prod'); 
   render().catch(e => toast(e.message, 'er')); 
   // Если для вкладки есть документы (чеки), загружаем их
   if (TK[t]) loadDocs(TK[t]).then(render).catch(e => toast(e.message, 'er')); 
   scrollTo(0, 0); 
 }
 
-/* Локальный поиск по товарам на вкладке "Товары" */
-function plist() {
-  const q = ($('#ps')?.value || '').toLowerCase();
-  $('#pl').innerHTML = P.filter(p => !q || (p.name || '').toLowerCase().includes(q) || (p.barcode || '').includes(q)).map(row).join('');
-}
 
 
 /* 
@@ -523,7 +527,7 @@ function code(m, v) {
 // Добавление товара в нужную корзину (Продажа, Закупка, Сверка)
 function hit(m, p) {
   if (m === 'prod') { closeCam(); return pform(p); } // на вкладке «Товары» сканирование открывает карточку
-  if (m === 'sale') { const l = S.cart.find(x => x.id === p.id); if (l) l.q++; else S.cart.push({ id: p.id, q: 1, price: p.retail_price || '' }); }
+  if (m === 'sale') { K.view = 'cart'; const l = S.cart.find(x => x.id === p.id); if (l) l.q++; else S.cart.push({ id: p.id, q: 1, price: p.retail_price || '' }); }
   else if (m === 'buy') { const l = S.pcart.find(x => x.id === p.id); if (l) l.q = (+l.q || 0) + 1; else S.pcart.push({ id: p.id, q: 1, cost: p.cost_price || '' }); }
   else { const x = S.inv[p.id] || (S.inv[p.id] = { cnt: 0, cost: '' }); x.cnt++; }
   toast('+ ' + nm(p)); render();
@@ -613,7 +617,7 @@ function pform(p, cb) {
     <input id="pf" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
   </div>
   <label>Название<input id="fn" value="${esc(p.name || '')}"></label>
-  <label>Штрихкод<input id="fb" inputmode="numeric" value="${esc(p.barcode || '')}"></label>
+  ${catFields(p)}<label>Штрихкод<input id="fb" inputmode="numeric" value="${esc(p.barcode || '')}"></label>
   <label>Цена продажи, сом<input id="fp" inputmode="decimal" value="${p.retail_price || ''}"></label>
   ${e ? `<small>Остаток: ${p.stock_quantity} шт (меняется закупкой и сверкой остатков)</small>` : ''}
   <div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="psave('${p.id || ''}')">Сохранить</button></div>`);
@@ -643,10 +647,226 @@ function psave(id) {
     if (r === false) throw new Error('Цена указана неверно');
     if (b && P.some(x => x.barcode === b && x.id !== id)) throw new Error('Такой штрихкод уже есть');
     const row_data = { name: n || null, barcode: b || null, retail_price: r, photo: T.photo || null };
+    const cid = await resolveCat(); if (cid !== undefined) row_data.category_id = cid;
     const cb = T && T.cb; let p = null;
     if (id) { const { error } = await sb.from('products').update(row_data).eq('id', id).eq('store_id', STORE); if (error) throw error; } 
     else { const { data, error } = await sb.from('products').insert({ ...row_data, store_id: STORE }).select().single(); if (error) throw error; p = data; }
-    closeModal(); await load(); toast('Товар сохранён', 'ok'); if (cb && p) cb(G(p.id));
+    closeModal(); await load(); K.ready = false; toast('Товар сохранён', 'ok'); if (cb && p) cb(G(p.id));
+  });
+}
+
+/*
+=========================================================
+ КАТЕГОРИИ, КАТАЛОГ ТОВАРОВ, ИЗБРАННОЕ
+=========================================================
+Категории грузятся один раз (CAT). Каталог листается через RPC catalog_page
+порциями по PAGE штук: поиск, сортировка и фильтры считает база.
+K.cat: null = список категорий, 'all' = все товары, 'none' = без категории, иначе id категории.
+*/
+let CAT = [], CE = null, ktm = null;
+const K = { mode: 'sale', view: 'cat', cat: null, sub: null, q: '', sort: 'az', fav: false, items: [], total: 0, ready: false, loading: false, ver: 0 };
+const PAGE = 24;
+const SORTS = { az: 'По алфавиту (А–Я)', new: 'Сначала новые закупки', old: 'Сначала старые закупки', freq: 'Чаще продаются (30 дн.)', recent: 'Недавно продавались (7 дн.)', low: 'Мало на складе' };
+const bySort = (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name);
+const tops = () => CAT.filter(c => !c.parent_id).sort(bySort);
+const subs = id => CAT.filter(c => c.parent_id === id).sort(bySort);
+const cn = id => (CAT.find(c => c.id === id) || {}).name || '';
+const kcur = () => K.sub || (CAT.some(c => c.id === K.cat) ? K.cat : null);
+
+async function loadCats() {
+  try {
+    const { data, error } = await sb.from('categories').select('id,name,parent_id,sort_order').eq('store_id', STORE).order('sort_order');
+    if (error) throw error; CAT = data;
+  } catch (e) { CAT = []; toast('Категории недоступны: ' + (e.message || e), 'er'); }
+}
+// Количество товаров по категориям (из кэша P); у родителя — вместе с подкатегориями
+function ccount() {
+  const d = {}, n = {}; P.forEach(p => { if (p.category_id) d[p.category_id] = (d[p.category_id] || 0) + 1; });
+  CAT.forEach(c => { n[c.id] = (n[c.id] || 0) + (d[c.id] || 0); if (c.parent_id) n[c.parent_id] = (n[c.parent_id] || 0) + (d[c.id] || 0); });
+  return n;
+}
+
+/* ---- Каталог: состояние и загрузка ---- */
+function kreset(mode) { Object.assign(K, { mode, view: 'cat', cat: null, sub: null, q: '', sort: 'az', fav: false, items: [], total: 0, ready: false, loading: false }); K.ver++; }
+function kensure() {
+  if (K.cat === null && !K.q && !K.fav) { K.ready = true; return cdraw(); }   // список категорий — без запроса к базе
+  if (!K.ready && !K.loading) cload(true); else cdraw();
+}
+async function cload(reset) {
+  if (reset) { K.items = []; K.total = 0; K.ver++; } else if (K.loading) return;
+  const v = K.ver; K.loading = true; cdraw();
+  try {
+    const { data, error } = await sb.rpc('catalog_page', { p_store: STORE, p_branch: BRANCH, p_cat: ['all', 'none'].includes(K.cat) ? null : (K.sub || K.cat), p_uncat: K.cat === 'none', p_q: K.q || null, p_sort: K.sort, p_fav: K.fav, p_low: LOW, p_offset: K.items.length, p_limit: PAGE });
+    if (error) throw error;
+    if (v !== K.ver) return;   // пока грузили, фильтры поменялись
+    K.items = K.items.concat(data.map(r => ({ ...r, stock_quantity: r.stock })));
+    K.total = data.length ? +data[0].total : K.total; K.ready = true;
+  } catch (e) {
+    if (v === K.ver) {
+      K.ready = true;
+      if (/jwt|token|expired/i.test(e.message || '')) { try { await relogin(); toast('Сессия обновлена — повторите'); } catch (e2) { toast('Сессия истекла — откройте приложение заново', 'er'); } }
+      else toast(e.message || String(e), 'er');
+    }
+  } finally { if (v === K.ver) { K.loading = false; cdraw(); } }
+}
+
+/* ---- Каталог: отрисовка ---- */
+const kui = () => `<div style="margin:8px 0"><input id="cq" inputmode="search" value="${esc(K.q)}" oninput="kq(this.value)"></div><div id="kn"></div><div id="cl"></div>`;
+const salTabs = () => { const a = K.view === 'cart' ? 'cart' : K.fav ? 'fav' : 'cat'; return `<div class="tabs">${[['cart', '🛒 Корзина'], ['cat', '📂 Каталог'], ['fav', '★ Избранное']].map(([v, n]) => `<button class="${a === v ? 'on' : ''}" onclick="kv('${v}')">${n}</button>`).join('')}</div>`; };
+function cdraw() {
+  const kn = $('#kn'), cl = $('#cl'); if (!kn || !cl) return;
+  const root = K.cat === null && !K.q && !K.fav, q = $('#cq');
+  if (q) q.placeholder = kcur() ? 'Поиск в «' + cn(kcur()) + '»' : 'Название или штрихкод';
+  kn.innerHTML = root ? '' : crumbs();
+  cl.innerHTML = root ? tiles() : klist();
+  cbar();
+}
+function tiles() {
+  const n = ccount(), un = P.filter(p => !p.category_id).length;
+  const b = (id, t, c) => `<button onclick="kc('${id}')"><b>${esc(t)}</b><br><small>${c} поз.</small></button>`;
+  const t = tops().map(c => b(c.id, c.name, n[c.id] || 0)); if (un) t.push(b('none', 'Без категории', un));
+  return `<button class="pb big" style="margin:0 0 8px" onclick="kc('all')">Все товары (${P.length})</button>` + (t.length ? `<div class="cg">${t.join('')}</div>` : '') + (ROLE === 'owner' && !CAT.length ? '<p class="mu">Категорий пока нет. Создайте их кнопкой «Категории» на вкладке «Товары».</p>' : '');
+}
+function crumbs() {
+  const c = CAT.find(x => x.id === K.cat), s = CAT.find(x => x.id === K.sub);
+  const t = K.fav ? '★ Избранное' : K.cat === 'none' ? 'Без категории' : K.cat === 'all' ? 'Все товары' : c ? c.name + (s ? ' › ' + s.name : '') : 'Поиск';
+  return `<div class="r" style="margin:0 0 6px">${K.fav ? '' : '<button class="sm" onclick="kc(null)">← Категории</button>'}<b class="f" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t)}</b></div>`
+    + (c && subs(c.id).length ? `<div class="chips"><button class="${K.sub ? '' : 'pb'}" onclick="ksub(null)">Все</button>${subs(c.id).map(x => `<button class="${K.sub === x.id ? 'pb' : ''}" onclick="ksub('${x.id}')">${esc(x.name)}</button>`).join('')}</div>` : '')
+    + `<select aria-label="Сортировка" onchange="ksort(this.value)" style="margin:4px 0 8px">${Object.entries(SORTS).map(([k, n]) => `<option value="${k}"${K.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
+}
+function klist() {
+  if (!K.items.length) return `<p class="mu">${K.loading ? 'Загрузка…' : K.fav ? 'Избранных товаров пока нет — нажмите ☆ у товара' : 'Ничего не найдено'}</p>`;
+  return K.items.map(ptile).join('') + (K.items.length < K.total ? `<button class="big" ${K.loading ? 'disabled' : ''} onclick="cload()">${K.loading ? 'Загрузка…' : 'Показать ещё (' + (K.total - K.items.length) + ')'}</button>` : '');
+}
+function ptile(p) {
+  const q = K.mode === 'sale' && (S.cart.find(l => l.id === p.id) || {}).q;
+  return `<div class="c r" onclick="${K.mode === 'sale' ? `kadd('${p.id}')` : `pform(G('${p.id}')||K.items.find(x=>x.id==='${p.id}'))`}" style="cursor:pointer">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>${esc(p.barcode || '')}</small></div><div style="text-align:right"><b class="${p.stock <= LOW ? 'lo' : ''}">${p.stock} шт</b><br><small>${p.retail_price ? fmt(p.retail_price) : 'без цены'}</small></div><b class="ok" id="b_${p.id}">${q ? '×' + q : ''}</b><button class="fv" aria-label="Избранное" onclick="event.stopPropagation();kfav('${p.id}')">${p.is_fav ? '★' : '☆'}</button></div>`;
+}
+function cbar() {
+  const e = $('#cb'); if (!e) return;
+  const n = S.cart.reduce((a, l) => a + l.q, 0), t = S.cart.reduce((a, l) => a + l.q * (+l.price || 0), 0);
+  e.innerHTML = n ? `<button class="pb big" style="margin:8px 0 0" onclick="kv('cart')">🛒 Корзина: ${n} шт · ${fmt(t)}</button>` : '';
+}
+
+/* ---- Каталог: действия ---- */
+function kc(id) { K.cat = id; K.sub = null; K.q = ''; const q = $('#cq'); if (q) q.value = ''; if (id === null) { K.ver++; K.loading = false; cdraw(); } else cload(true); }
+function ksub(id) { K.sub = id; cload(true); }
+function ksort(v) { K.sort = v; cload(true); }
+function kq(v) {
+  K.q = v.trim(); clearTimeout(ktm);
+  ktm = setTimeout(() => { if (!K.q && K.cat === null && !K.fav) { K.ver++; K.loading = false; cdraw(); } else cload(true); }, 300);
+}
+function kv(v) { K.view = v === 'cart' ? 'cart' : 'cat'; K.fav = v === 'fav'; K.cat = null; K.sub = null; K.q = ''; K.items = []; K.total = 0; K.ready = false; K.loading = false; K.ver++; render(); }
+// Тап по товару в каталоге: добавить в корзину или увеличить количество (без перерисовки списка)
+function kadd(id) {
+  const p = K.items.find(x => x.id === id) || G(id); if (!p) return;
+  if (!G(id)) P.push({ ...p, cost_price: 0 });
+  const l = S.cart.find(x => x.id === id);
+  if (l) l.q++; else S.cart.push({ id, q: 1, price: p.retail_price || '' });
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+  const b = $('#b_' + id); if (b) b.textContent = '×' + S.cart.find(x => x.id === id).q;
+  cbar();
+}
+// Избранное хранится в таблице favorites (на уровне магазина)
+async function kfav(id) {
+  const it = K.items.find(x => x.id === id); if (!it) return; const on = !it.is_fav;
+  const { error } = on ? await sb.from('favorites').insert({ store_id: STORE, product_id: id }) : await sb.from('favorites').delete().eq('store_id', STORE).eq('product_id', id);
+  if (error && error.code !== '23505') return toast(error.message, 'er');
+  it.is_fav = on;
+  if (K.fav && !on) { K.items = K.items.filter(x => x !== it); K.total--; }
+  cdraw();
+}
+
+/* ---- Категория / подкатегория в карточке товара ---- */
+function subOpts(t, sel) {
+  if (!t) return '<option value="">—</option>';
+  return '<option value="">— без подкатегории —</option>' + (t === '__new' ? '' : subs(t).map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.name)}</option>`).join('')) + (ROLE === 'owner' ? '<option value="__new">＋ Новая подкатегория…</option>' : '');
+}
+function catFields(p) {
+  const c = CAT.find(x => x.id === p.category_id), top = c ? (c.parent_id || c.id) : '', sub = c && c.parent_id ? c.id : '';
+  const lock = !!p.id && ROLE !== 'owner';   // кассир не переносит существующие товары между категориями
+  return `<label>Категория<select id="fc" onchange="fcat()" ${lock ? 'disabled' : ''}><option value="">— без категории —</option>${tops().map(x => `<option value="${x.id}"${x.id === top ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}${ROLE === 'owner' ? '<option value="__new">＋ Новая категория…</option>' : ''}</select></label><input id="fcn" placeholder="Название новой категории" hidden>
+  <label>Подкатегория<select id="fs" onchange="fsub()" ${lock || !top ? 'disabled' : ''}>${subOpts(top, sub)}</select></label><input id="fsn" placeholder="Название новой подкатегории" hidden>`;
+}
+function fcat() {
+  const t = $('#fc').value; $('#fcn').hidden = t !== '__new'; if (t === '__new') $('#fcn').focus();
+  const s = $('#fs'); s.innerHTML = subOpts(t, ''); s.disabled = !t; fsub();
+}
+function fsub() { const n = $('#fs').value === '__new'; $('#fsn').hidden = !n; if (n) $('#fsn').focus(); }
+async function mkcat(name, parent) {
+  const sib = CAT.filter(c => (c.parent_id || null) === (parent || null));
+  const ex = sib.find(c => c.name.toLowerCase() === name.toLowerCase()); if (ex) return ex.id;
+  const { data, error } = await sb.from('categories').insert({ store_id: STORE, name, parent_id: parent || null, sort_order: Math.max(-1, ...sib.map(c => c.sort_order)) + 1 }).select().single();
+  if (error) throw error; CAT.push(data); return data.id;
+}
+// Возвращает id категории для товара; undefined — поле не менять (кассир редактирует товар)
+async function resolveCat() {
+  if ($('#fc').disabled) return undefined;
+  let top = $('#fc').value, sub = $('#fs').value;
+  if (top === '__new') { const n = $('#fcn').value.trim(); if (!n) throw new Error('Введите название категории'); top = await mkcat(n, null); }
+  if (sub === '__new') { const n = $('#fsn').value.trim(); if (!n) throw new Error('Введите название подкатегории'); sub = await mkcat(n, top); }
+  return sub || top || null;
+}
+
+/* ---- Управление категориями (только владелец) ---- */
+function catMgr() {
+  if (ROLE !== 'owner') return;
+  const cnt = ccount(), t = tops();
+  const line = (c, i, a, ind) => `<div class="r" style="padding:6px 0;margin-left:${ind ? 22 : 0}px;border-bottom:1px solid var(--br)"><div class="f"><b>${esc(c.name)}</b><small>${cnt[c.id] || 0} поз.</small></div><button class="x" ${i ? '' : 'disabled'} onclick="cmove('${c.id}',-1)">↑</button><button class="x" ${i < a.length - 1 ? '' : 'disabled'} onclick="cmove('${c.id}',1)">↓</button><button class="x" onclick="cedit('${c.id}')">✎</button><button class="x" onclick="cdel('${c.id}')">🗑</button></div>`;
+  modal('<h2>Категории</h2>' + (t.map((c, i) => line(c, i, t) + subs(c.id).map((s, j, a) => line(s, j, a, 1)).join('') + `<div style="margin:4px 0 8px 22px"><button class="sm" onclick="cedit(null,'${c.id}')">＋ Подкатегория</button></div>`).join('') || '<p class="mu">Категорий пока нет</p>') + '<button class="pb big" onclick="cedit(null,null)">＋ Новая категория</button><button class="big" onclick="closeModal();K.ready=false;render()">Закрыть</button>');
+}
+function cedit(id, parent) {
+  const c = id && CAT.find(x => x.id === id); CE = { id: id || null, parent: parent || null };
+  modal(`<h2>${id ? 'Переименовать' : parent ? 'Новая подкатегория' : 'Новая категория'}</h2><label>Название<input id="cnm" value="${esc(c ? c.name : '')}"></label><div class="row"><button onclick="catMgr()">Отмена</button><button class="pb" onclick="csave()">Сохранить</button></div>`);
+  setTimeout(() => { const e = $('#cnm'); if (e) e.focus(); }, 50);
+}
+function csave() {
+  const n = $('#cnm').value.trim(); if (!n) return toast('Введите название', 'er');
+  const cur = CE.id && CAT.find(x => x.id === CE.id), par = cur ? (cur.parent_id || null) : CE.parent;
+  if (CAT.some(c => c.id !== CE.id && (c.parent_id || null) === par && c.name.toLowerCase() === n.toLowerCase())) return toast('Такая категория уже есть', 'er');
+  run(async () => {
+    if (cur) { const { error } = await sb.from('categories').update({ name: n }).eq('id', cur.id).eq('store_id', STORE); if (error) throw error; cur.name = n; }
+    else await mkcat(n, CE.parent);
+    catMgr();
+  });
+}
+function cmove(id, d) {
+  run(async () => {
+    const c = CAT.find(x => x.id === id), sib = CAT.filter(x => (x.parent_id || null) === (c.parent_id || null)).sort(bySort), i = sib.indexOf(c), j = i + d;
+    if (j < 0 || j >= sib.length) return;
+    sib.splice(i, 1); sib.splice(j, 0, c);
+    const ch = sib.map((x, k) => [x, k]).filter(([x, k]) => x.sort_order !== k);
+    const rs = await Promise.all(ch.map(([x, k]) => sb.from('categories').update({ sort_order: k }).eq('id', x.id).eq('store_id', STORE)));
+    const er = rs.find(r => r.error); if (er) throw er.error;
+    ch.forEach(([x, k]) => x.sort_order = k); catMgr();
+  });
+}
+// Удаление: сначала проверяем, что в категории (и её подкатегориях) нет товаров
+function cdel(id) {
+  run(async () => {
+    const c = CAT.find(x => x.id === id), ids = [id, ...subs(id).map(s => s.id)];
+    const { count, error } = await sb.from('products').select('id', { count: 'exact', head: true }).eq('store_id', STORE).in('category_id', ids);
+    if (error) throw error;
+    if (count > 0) return cmoveAsk(id, count);
+    const sc = subs(id).length;
+    ask(`Удалить «${c.name}»${sc ? ' вместе с подкатегориями (' + sc + ')' : ''}? Товаров в ней нет.`, () => run(async () => {
+      const { error } = await sb.from('categories').delete().eq('id', id).eq('store_id', STORE); if (error) throw error;
+      CAT = CAT.filter(x => !ids.includes(x.id)); if (ids.includes(K.cat) || ids.includes(K.sub)) { K.cat = null; K.sub = null; }
+      catMgr();
+    }));
+  });
+}
+function cmoveAsk(id, count) {
+  const ids = [id, ...subs(id).map(s => s.id)], L = [];
+  tops().forEach(t => { L.push([t.id, t.name]); subs(t.id).forEach(s => L.push([s.id, t.name + ' › ' + s.name])); });
+  CE = { id, ids };
+  modal(`<h2>В категории ${count} товаров</h2><p class="mu">Сначала перенесите товары, потом удалите категорию. Сами товары и история не удаляются.</p>` + L.filter(([i]) => !ids.includes(i)).map(([i, n]) => `<button class="big" style="margin:4px 0" onclick="cmoveAll('${i}')">В «${esc(n)}»</button>`).join('') + '<button class="big" style="margin:4px 0" onclick="cmoveAll(\'\')">Без категории</button><button class="big" onclick="catMgr()">Отмена</button>');
+}
+function cmoveAll(to) {
+  run(async () => {
+    const { error } = await sb.from('products').update({ category_id: to || null }).eq('store_id', STORE).in('category_id', CE.ids);
+    if (error) throw error;
+    await load(); toast('Товары перенесены — теперь категорию можно удалить', 'ok'); catMgr();
   });
 }
 
@@ -729,7 +949,7 @@ async function enterBranch(b) {
   S.rb = null; S.docs = {}; S.cart = []; S.pcart = []; S.inv = {}; S.win = null; S.tab = 'home';
   $('#nav').style.display = 'none'; $('#win').hidden = true;
   $('#app').innerHTML = '<h1>Загружаем товары…</h1>';
-  try { await load(); await render(); } catch (e) { toast(e.message || String(e), 'er'); }
+  try { await Promise.all([load(), loadCats()]); await render(); } catch (e) { toast(e.message || String(e), 'er'); }
 }
 async function chooseStore() {
   try {
