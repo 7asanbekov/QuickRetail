@@ -226,7 +226,7 @@ let BRANCH = null, BRANCHES = [], IS_ADMIN = false,   // текущий фили
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.3.1'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
+const APP_VERSION = '1.9.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 // Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
 // при запуске показывалась на экране, а не молча останавливала приложение.
@@ -845,6 +845,71 @@ function invOk() {
 =========================================================
 */
 /* Вход в функцию auth-store. Админ платформы без store_id получает список магазинов, с store_id — токен на выбранный магазин */
+/* =========================================================
+   КЭШИРОВАНИЕ СЕССИИ И КАТАЛОГА (МГНОВЕННЫЙ СТАРТ)
+========================================================= */
+const AUTH_KEY_PREFIX = 'qr_auth_';
+const CAT_KEY_PREFIX = 'qr_cat_';
+
+function getUserId() {
+  return (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 'local';
+}
+
+function getCachedAuth() {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY_PREFIX + getUserId());
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d || !d.token) return null;
+    let exp = d.exp;
+    if (!exp) {
+      try { exp = JSON.parse(atob(d.token.split('.')[1])).exp; } catch (_) {}
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (exp && now < exp - 300) return d;
+  } catch (e) {}
+  return null;
+}
+
+function saveCachedAuth(d) {
+  try {
+    let exp = 0;
+    try { exp = JSON.parse(atob(d.token.split('.')[1])).exp; } catch (_) {
+      exp = Math.floor(Date.now() / 1000) + (d.expires_in || 21600);
+    }
+    localStorage.setItem(AUTH_KEY_PREFIX + getUserId(), JSON.stringify({ ...d, exp }));
+  } catch (e) {}
+}
+
+function clearCachedAuth() {
+  try { localStorage.removeItem(AUTH_KEY_PREFIX + getUserId()); } catch (e) {}
+}
+
+function loadCachedCatalog() {
+  try {
+    const raw = localStorage.getItem(CAT_KEY_PREFIX + STORE + '_' + BRANCH);
+    if (!raw) return false;
+    const c = JSON.parse(raw);
+    if (Array.isArray(c.P) && c.P.length > 0) {
+      P = c.P;
+      CATS = c.CATS || [];
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function saveCachedCatalog() {
+  try {
+    localStorage.setItem(CAT_KEY_PREFIX + STORE + '_' + BRANCH, JSON.stringify({ P, CATS, t: Date.now() }));
+  } catch (e) {
+    try {
+      const lightP = P.map(p => ({ ...p, photo: null }));
+      localStorage.setItem(CAT_KEY_PREFIX + STORE + '_' + BRANCH, JSON.stringify({ P: lightP, CATS, t: Date.now() }));
+    } catch (_) {}
+  }
+}
+
 async function authCall(storeId) {
   const { data, error } = await sb0.functions.invoke('auth-store', { body: { initData: tg.initData, store_id: storeId || undefined } });
   if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (e) {} throw new Error(m); }
@@ -852,13 +917,19 @@ async function authCall(storeId) {
   if (data.error) throw new Error(data.error);
   return data;
 }
+
 function applyAuth(d) {
   if (!d.token) throw new Error('Сервер не выдал токен — обновите функцию auth-store');
+  saveCachedAuth(d);
   STORE = d.store_id; USER = d.telegram_id; ROLE = d.role; IS_ADMIN = !!d.is_admin; STORE_NAME = d.store_name || STORE_NAME; BRANCHES = d.branches || [];
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + d.token } } });
   document.body.classList.toggle('cashier-mode', ROLE === 'cashier');
 }
-async function relogin() { applyAuth(await authCall(IS_ADMIN ? STORE : null)); }
+
+async function relogin() {
+  clearCachedAuth();
+  applyAuth(await authCall(IS_ADMIN ? STORE : null));
+}
 
 function showLoading(t = 'Подгружаем товары…', s = 'Пожалуйста, подождите…') {
   $('#nav').style.display = 'none'; $('#win').hidden = true;
@@ -870,6 +941,7 @@ function showPicker(title, items, onPick, extra) {
   $('#app').innerHTML = `<h1>${esc(title)}</h1>` + items.map((x, i) => `<button class="big" style="margin:6px 0" onclick="PICK(${i})">${esc(x.name)}${x.sub ? ' <small>' + esc(x.sub) + '</small>' : ''}</button>`).join('') + (extra || '');
   window.PICK = i => onPick(items[i]);
 }
+
 async function enterStore(d) {
   applyAuth(d);
   let saved = null; try { saved = localStorage.getItem('branch_' + STORE); } catch (e) {}
@@ -877,13 +949,31 @@ async function enterStore(d) {
   if (b) return enterBranch(b);
   showPicker('Выберите филиал', BRANCHES, enterBranch, IS_ADMIN ? '<button class="big" onclick="chooseStore()">← Другой магазин</button>' : '');
 }
+
 async function enterBranch(b) {
   BRANCH = b.id; try { localStorage.setItem('branch_' + STORE, b.id); } catch (e) {}
   S.rb = null; S.docs = {}; S.cart = []; S.pcart = []; S.inv = {}; S.win = null; S.tab = 'home';
-  showLoading('Подгружаем товары…', b.name || '');
-  try { await load(); await render(); } catch (e) { toast(e.message || String(e), 'er'); }
+  
+  // МГНОВЕННЫЙ запуск из локального кэша
+  const hasCache = loadCachedCatalog();
+  if (hasCache) {
+    render();
+  } else {
+    showLoading('Подгружаем товары…', b.name || '');
+  }
+
+  // Фоновая синхронизация с сервером
+  try {
+    await load();
+    saveCachedCatalog();
+    await render();
+  } catch (e) {
+    if (!hasCache) toast(e.message || String(e), 'er');
+  }
 }
+
 async function chooseStore() {
+  clearCachedAuth();
   showLoading('Загружаем список магазинов…');
   try {
     const d = await authCall(null);
@@ -894,11 +984,27 @@ async function chooseStore() {
       });
   } catch (e) { toast(e.message, 'er'); }
 }
+
 function chooseBranch() { showPicker('Выберите филиал', BRANCHES, enterBranch, '<button class="big" onclick="render()">Отмена</button>'); }
 
 /* Старт приложения */
 async function startApp() {
   if (!tg || !tg.initData) { $('#app').innerHTML = '<h1>Откройте в Telegram</h1><p class="mu">Приложение работает только внутри Telegram.</p>'; return; }
+  
+  // 1. Проверяем валидный кэш токена в телефоне (мгновенный вход без запроса к auth-store)
+  const cachedAuth = getCachedAuth();
+  if (cachedAuth && cachedAuth.token && cachedAuth.store_id) {
+    try {
+      applyAuth(cachedAuth);
+      await enterStore(cachedAuth);
+      warmScanner();
+      return;
+    } catch (e) {
+      clearCachedAuth();
+    }
+  }
+
+  // 2. Вход через сервер при первом запуске или истечении токена (>6 часов)
   try {
     const d = await authCall(null);
     if (d.pick_store) { IS_ADMIN = true; await chooseStoreFrom(d); return; }
@@ -907,6 +1013,7 @@ async function startApp() {
     $('#app').innerHTML = `<h1>Ошибка входа</h1><p class="mu">${esc(e.message)}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
   }
 }
+
 async function chooseStoreFrom(d) {
   showPicker('Выберите магазин', d.stores.map(s => ({ id: s.id, name: s.name, sub: s.sub_status === 'inactive' ? 'подписка неактивна' : '' })),
     async s => {
