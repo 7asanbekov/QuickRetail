@@ -749,7 +749,7 @@ function closeCam() {
 function genUUID() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
 }
@@ -759,11 +759,11 @@ async function dataUrlToBlob(dataUrl) {
   try {
     return await (await fetch(dataUrl)).blob();
   } catch (e) {
-    const parts = dataUrl.split(',');
-    const mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/jpeg';
-    const bin = atob(parts[1]);
-    const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    var parts = dataUrl.split(',');
+    var mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/jpeg';
+    var bin = atob(parts[1]);
+    var arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
     return new Blob([arr], { type: mime });
   }
 }
@@ -868,7 +868,6 @@ function psave(id) {
     }
     closeModal();
     await load();
-    saveCachedCatalog();
     toast('Товар сохранён', 'ok');
     if (cb && p) cb(G(p.id));
   });
@@ -921,107 +920,6 @@ function invOk() {
 =========================================================
 */
 /* Вход в функцию auth-store. Админ платформы без store_id получает список магазинов, с store_id — токен на выбранный магазин */
-/* =========================================================
-   КЭШИРОВАНИЕ СЕССИИ И КАТАЛОГА (МГНОВЕННЫЙ СТАРТ)
-========================================================= */
-const AUTH_KEY_PREFIX = 'qr_auth_';
-const CAT_KEY_PREFIX = 'qr_cat_';
-
-function getUserId() {
-  return (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 'local';
-}
-
-function getCachedAuth() {
-  try {
-    const raw = localStorage.getItem(AUTH_KEY_PREFIX + getUserId());
-    if (!raw) return null;
-    const d = JSON.parse(raw);
-    if (!d || !d.token) return null;
-    let exp = d.exp;
-    if (!exp) {
-      try { exp = JSON.parse(atob(d.token.split('.')[1])).exp; } catch (_) {}
-    }
-    const now = Math.floor(Date.now() / 1000);
-    if (exp && now < exp - 300) return d;
-  } catch (e) {}
-  return null;
-}
-
-function saveCachedAuth(d) {
-  try {
-    let exp = 0;
-    try { exp = JSON.parse(atob(d.token.split('.')[1])).exp; } catch (_) {
-      exp = Math.floor(Date.now() / 1000) + (d.expires_in || 21600);
-    }
-    localStorage.setItem(AUTH_KEY_PREFIX + getUserId(), JSON.stringify({ ...d, exp }));
-  } catch (e) {}
-}
-
-function clearCachedAuth() {
-  try { localStorage.removeItem(AUTH_KEY_PREFIX + getUserId()); } catch (e) {}
-}
-
-function loadCachedCatalog() {
-  try {
-    const raw = localStorage.getItem(CAT_KEY_PREFIX + STORE + '_' + BRANCH);
-    if (!raw) return false;
-    const c = JSON.parse(raw);
-    if (Array.isArray(c.P) && c.P.length > 0) {
-      P = c.P;
-      CATS = c.CATS || [];
-      return true;
-    }
-  } catch (e) {}
-  return false;
-}
-
-function saveCachedCatalog() {
-  try {
-    localStorage.setItem(CAT_KEY_PREFIX + STORE + '_' + BRANCH, JSON.stringify({ P, CATS, t: Date.now() }));
-  } catch (e) {
-    try {
-      const lightP = P.map(p => ({ ...p, photo: (p.photo && p.photo.startsWith('data:image')) ? null : p.photo }));
-      localStorage.setItem(CAT_KEY_PREFIX + STORE + '_' + BRANCH, JSON.stringify({ P: lightP, CATS, t: Date.now() }));
-    } catch (_) {}
-  }
-}
-
-// Автоматическая фоновая миграция старых Base64-фотографий в Supabase Storage (для владельца/админа)
-async function migrateLegacyPhotos() {
-  if (ROLE !== 'owner' && !IS_ADMIN) return;
-  const legacy = P.filter(p => p.photo && typeof p.photo === 'string' && p.photo.startsWith('data:image'));
-  if (!legacy.length) return;
-  console.log(`[Storage] Найдено ${legacy.length} старых фото в Base64. Фоновная выгрузка в Storage...`);
-  let migrated = 0;
-  for (const p of legacy) {
-    try {
-      const blob = await dataUrlToBlob(p.photo);
-      const filePath = `${STORE}/${p.id}.jpg`;
-      const { error: upErr } = await sb.storage.from('product-photos').upload(filePath, blob, {
-        contentType: 'image/jpeg',
-        upsert: true
-      });
-      if (upErr) {
-        console.warn(`[Storage] Пропуск фото для ${p.name || p.id}:`, upErr.message);
-        continue;
-      }
-      const { data: pubData } = sb.storage.from('product-photos').getPublicUrl(filePath);
-      const newUrl = pubData.publicUrl + '?t=' + Date.now();
-      const { error: dbErr } = await sb.from('products').update({ photo: newUrl }).eq('id', p.id).eq('store_id', STORE);
-      if (!dbErr) {
-        p.photo = newUrl;
-        migrated++;
-      }
-    } catch (e) {
-      console.warn(`[Storage] Ошибка миграции фото товара ${p.id}:`, e);
-    }
-  }
-  if (migrated > 0) {
-    console.log(`[Storage] Успешно перенесено ${migrated} фото в Storage!`);
-    saveCachedCatalog();
-  }
-}
-
 async function authCall(storeId) {
   const { data, error } = await sb0.functions.invoke('auth-store', { body: { initData: tg.initData, store_id: storeId || undefined } });
   if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (e) {} throw new Error(m); }
@@ -1029,19 +927,13 @@ async function authCall(storeId) {
   if (data.error) throw new Error(data.error);
   return data;
 }
-
 function applyAuth(d) {
   if (!d.token) throw new Error('Сервер не выдал токен — обновите функцию auth-store');
-  saveCachedAuth(d);
   STORE = d.store_id; USER = d.telegram_id; ROLE = d.role; IS_ADMIN = !!d.is_admin; STORE_NAME = d.store_name || STORE_NAME; BRANCHES = d.branches || [];
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: 'Bearer ' + d.token } } });
   document.body.classList.toggle('cashier-mode', ROLE === 'cashier');
 }
-
-async function relogin() {
-  clearCachedAuth();
-  applyAuth(await authCall(IS_ADMIN ? STORE : null));
-}
+async function relogin() { applyAuth(await authCall(IS_ADMIN ? STORE : null)); }
 
 function showLoading(t = 'Подгружаем товары…', s = 'Пожалуйста, подождите…') {
   $('#nav').style.display = 'none'; $('#win').hidden = true;
@@ -1053,7 +945,6 @@ function showPicker(title, items, onPick, extra) {
   $('#app').innerHTML = `<h1>${esc(title)}</h1>` + items.map((x, i) => `<button class="big" style="margin:6px 0" onclick="PICK(${i})">${esc(x.name)}${x.sub ? ' <small>' + esc(x.sub) + '</small>' : ''}</button>`).join('') + (extra || '');
   window.PICK = i => onPick(items[i]);
 }
-
 async function enterStore(d) {
   applyAuth(d);
   let saved = null; try { saved = localStorage.getItem('branch_' + STORE); } catch (e) {}
@@ -1061,32 +952,13 @@ async function enterStore(d) {
   if (b) return enterBranch(b);
   showPicker('Выберите филиал', BRANCHES, enterBranch, IS_ADMIN ? '<button class="big" onclick="chooseStore()">← Другой магазин</button>' : '');
 }
-
 async function enterBranch(b) {
   BRANCH = b.id; try { localStorage.setItem('branch_' + STORE, b.id); } catch (e) {}
   S.rb = null; S.docs = {}; S.cart = []; S.pcart = []; S.inv = {}; S.win = null; S.tab = 'home';
-  
-  // МГНОВЕННЫЙ запуск из локального кэша
-  const hasCache = loadCachedCatalog();
-  if (hasCache) {
-    render();
-  } else {
-    showLoading('Подгружаем товары…', b.name || '');
-  }
-
-  // Фоновая синхронизация с сервером
-  try {
-    await load();
-    saveCachedCatalog();
-    await render();
-    setTimeout(migrateLegacyPhotos, 1500);
-  } catch (e) {
-    if (!hasCache) toast(e.message || String(e), 'er');
-  }
+  showLoading('Подгружаем товары…', b.name || '');
+  try { await load(); await render(); } catch (e) { toast(e.message || String(e), 'er'); }
 }
-
 async function chooseStore() {
-  clearCachedAuth();
   showLoading('Загружаем список магазинов…');
   try {
     const d = await authCall(null);
@@ -1097,36 +969,35 @@ async function chooseStore() {
       });
   } catch (e) { toast(e.message, 'er'); }
 }
-
 function chooseBranch() { showPicker('Выберите филиал', BRANCHES, enterBranch, '<button class="big" onclick="render()">Отмена</button>'); }
 
 /* Старт приложения */
 async function startApp() {
-  if (!tg || !tg.initData) { $('#app').innerHTML = '<h1>Откройте в Telegram</h1><p class="mu">Приложение работает только внутри Telegram.</p>'; return; }
-  
-  // 1. Проверяем валидный кэш токена в телефоне (мгновенный вход без запроса к auth-store)
-  const cachedAuth = getCachedAuth();
-  if (cachedAuth && cachedAuth.token && cachedAuth.store_id) {
-    try {
-      applyAuth(cachedAuth);
-      await enterStore(cachedAuth);
-      warmScanner();
-      return;
-    } catch (e) {
-      clearCachedAuth();
-    }
-  }
-
-  // 2. Вход через сервер при первом запуске или истечении токена (>6 часов)
   try {
+    // Очистка возможных устаревших ключей кэша сессии
+    try {
+      for (var k in localStorage) {
+        if (k && (k.indexOf('qr_auth_') === 0 || k.indexOf('qr_cat_') === 0)) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch (_) {}
+
+    if (!tg || !tg.initData) {
+      $('#app').innerHTML = '<h1>Откройте в Telegram</h1><p class="mu">Приложение работает только внутри Telegram.</p>';
+      return;
+    }
+
+    showLoading('Подключение к серверу…', 'Авторизация в магазине…');
     const d = await authCall(null);
     if (d.pick_store) { IS_ADMIN = true; await chooseStoreFrom(d); return; }
-    await enterStore(d); toast('Вход выполнен', 'ok'); warmScanner();
+    await enterStore(d);
+    toast('Вход выполнен', 'ok');
+    warmScanner();
   } catch (e) {
-    $('#app').innerHTML = `<h1>Ошибка входа</h1><p class="mu">${esc(e.message)}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
+    $('#app').innerHTML = `<h1>Ошибка входа</h1><p class="mu">${esc(e.message || String(e))}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
   }
 }
-
 async function chooseStoreFrom(d) {
   showPicker('Выберите магазин', d.stores.map(s => ({ id: s.id, name: s.name, sub: s.sub_status === 'inactive' ? 'подписка неактивна' : '' })),
     async s => {
