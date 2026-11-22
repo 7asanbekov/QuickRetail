@@ -262,6 +262,7 @@ const S = {
   rb: null,             // Филиал в отчётах: id или 'all'
   cartView: false,      // В окне продажи: показан чек (true) или каталог (false)
   sq: '', cat: null, sub: null, lim: 30,   // Поиск, выбранная категория/подкатегория, сколько товаров показано
+  bsq: '', blim: 30,                       // Поиск в окне закупки (живой поиск как в продаже)
   hp: 'day',            // Главная: период показателей ('day' | 'month')
   ef: monthStart(), et: today(), ecat: '', elim: 50,   // Расходы: период, категория, сколько записей показано
   from: today(),        // Начальная дата для отчетов
@@ -378,15 +379,15 @@ function cartHtml() {
   }).join('');
   return h + (h ? `<div class="tot"><span>Итого</span><b>${fmt(cartTotal())}</b></div><button class="pb big" onclick="sell()">Продать</button>` : '');
 }
-const scanbar = m => `<div class="sb"><input id="sq" placeholder="${m === 'sale' ? 'Название или штрихкод' : 'Штрихкод или название'}" inputmode="search" value="${m === 'sale' ? esc(S.sq || '') : ''}" ${m === 'sale' ? 'oninput="qs(this.value)"' : ''} onkeydown="if(event.key==='Enter')look('${m}')"><button onclick="look('${m}')">Найти</button><button aria-label="Камера" onclick="scanBarcode('${m}')">📷</button></div>`;
+const scanbar = m => `<div class="sb"><input id="sq" type="search" placeholder="Название или штрихкод" inputmode="search" value="${m === 'sale' ? esc(S.sq || '') : m === 'buy' ? esc(S.bsq || '') : ''}" ${m === 'sale' ? 'oninput="qs(this.value)"' : m === 'buy' ? 'oninput="qsBuy(this.value)"' : ''} onsearch="if(!this.value){${m === 'sale' ? 'qs(\'\')' : m === 'buy' ? 'clearBuySearch()' : ''}}" onkeydown="if(event.key==='Enter')look('${m}')"><button onclick="look('${m}')">Найти</button><button aria-label="Камера" onclick="scanBarcode('${m}')">📷</button></div>`;
 
 // Объект V содержит функции отрисовки для каждой вкладки навигации
 /* Кнопка «Новый документ» на вкладке и заголовки окна создания */
 const NAVT = { rep: 'more', inv: 'more' }, BACK = { rep: 1, inv: 1 };   // Отчёты и Сверка живут во вкладке «Ещё»
 const WN = { ecats: ['', '', 'Категории расходов'], cats: ['', '', 'Категории'], sale: ['Новая продажа', 'Продолжить продажу', 'Продажа'], buy: ['Новая закупка', 'Продолжить закупку', 'Закупка'], inv: ['Новая сверка', 'Продолжить сверку', 'Сверка остатков'] };
 const newBtn = (w, n) => `<button class="pb big" style="margin:0 0 8px" onclick="openWin('${w}')">${n ? WN[w][1] + ' (' + n + ')' : WN[w][0]}</button>`;
-function openWin(w) { if (w === 'sale') { S.cartView = false; S.sq = ''; S.cat = null; S.sub = null; S.lim = 30; } S.win = w; render(); const e = $('#win'); if (e) e.scrollTop = 0; }
-function closeWin() { S.win = null; render(); }
+function openWin(w) { if (w === 'sale') { S.cartView = false; S.sq = ''; S.cat = null; S.sub = null; S.lim = 30; } if (w === 'buy') { S.bsq = ''; S.blim = 30; } S.win = w; render(); const e = $('#win'); if (e) e.scrollTop = 0; }
+function closeWin() { S.sq = ''; S.bsq = ''; S.win = null; render(); }
 if (tg && tg.BackButton) tg.BackButton.onClick(() => { if (S.win) closeWin(); });
 
 /* ===== Категории и каталог ===== */
@@ -428,6 +429,31 @@ function catRefresh() { const b = $('#sbody'); if (b) b.innerHTML = catalogBody(
 function qs(v) { S.sq = v; S.lim = 30; catRefresh(); }               // поиск по мере ввода (без перерисовки окна)
 function selCat(id) { S.cat = id; S.sub = null; S.lim = 30; catRefresh(); const w = $('#win'); if (w) w.scrollTop = 0; }
 function selSub(id) { S.sub = id; S.lim = 30; catRefresh(); }
+
+/* ===== Живой поиск в окне закупки (как в продаже) ===== */
+const pcardBuy = p => {
+  const l = S.pcart.find(x => x.id === p.id);
+  const cost = p.cost_price ? 'закуп: ' + fmt(p.cost_price) : (p.retail_price ? 'розн: ' + fmt(p.retail_price) : 'без цены');
+  return `<div class="c r" onclick="hit('buy',G('${p.id}'))" style="cursor:pointer">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>${esc([catPath(p), p.barcode].filter(Boolean).join(' · '))}</small></div><div style="text-align:right"><b class="${p.stock_quantity <= LOW ? 'lo' : ''}">${p.stock_quantity} шт</b><br><small>${cost}</small></div>${l ? `<span class="bd">${l.q}</span>` : ''}</div>`;
+};
+const prodListBuy = l => {
+  l = l.slice().sort(byName);
+  const lim = S.blim || 30;
+  return l.slice(0, lim).map(pcardBuy).join('') + (l.length > lim ? `<button class="big" onclick="S.blim=(S.blim||30)+30;buySearchRefresh()">Показать ещё (${l.length - lim})</button>` : '');
+};
+function buySearchBody() {
+  const q = (S.bsq || '').trim().toLowerCase();
+  if (!q) return '';
+  const list = P.filter(p => (p.name || '').toLowerCase().includes(q) || (p.barcode || '').includes(q));
+  if (!list.length) {
+    const isCode = /^\d{6,}$/.test(q);
+    return `<div class="c" style="text-align:center;padding:14px 12px"><div class="mu" style="margin-bottom:8px">Товар не найден</div><button class="pb sm" onclick="pform(${isCode ? `{barcode:'${esc(q)}'}` : `{name:'${esc(q)}'}`}, p => hit('buy', p))">＋ Создать товар «${esc(q)}»</button></div>`;
+  }
+  return `<div class="r" style="margin:4px 0 6px"><small class="mu">Найдено: ${list.length}</small><button class="sm" style="margin-left:auto" onclick="clearBuySearch()">✕ Очистить</button></div>` + prodListBuy(list);
+}
+function buySearchRefresh() { const b = $('#bbody'); if (b) b.innerHTML = buySearchBody(); }
+function qsBuy(v) { S.bsq = v; S.blim = 30; buySearchRefresh(); }
+function clearBuySearch() { S.bsq = ''; const e = $('#sq'); if (e) e.value = ''; buySearchRefresh(); render(); }
 
 /* ===== Управление категориями (владелец) ===== */
 const catRow = (c, i, n, sub) => `<div class="c r" style="${sub ? 'margin-left:18px' : ''}"><div class="f"><b>${esc(c.name)}</b><small>${catCount(c.id)} товаров</small></div><button class="x" aria-label="Выше" ${i === 0 ? 'disabled' : ''} onclick="catMove('${c.id}',-1)">↑</button><button class="x" aria-label="Ниже" ${i === n - 1 ? 'disabled' : ''} onclick="catMove('${c.id}',1)">↓</button><button class="x" aria-label="Переименовать" onclick="catEdit('${c.id}')">✎</button><button class="x" aria-label="Удалить" onclick="catDel('${c.id}')">🗑</button></div>`;
@@ -653,7 +679,9 @@ const V = {
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small>остаток ${p ? p.stock_quantity : 0}${p && p.cost_price ? ' · себестоимость ' + fmt(p.cost_price) : ''}</small></div><button class="x" aria-label="Убрать" onclick="S.pcart.splice(${i},1);render()">✕</button></div>
       <div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Закупочная цена за шт<input inputmode="decimal" value="${esc(l.cost)}" onchange="S.pcart[${i}].cost=this.value.replace(',','.');render()"></label><label style="flex:1;margin:0">Кол-во<input inputmode="numeric" value="${esc(l.q)}" onchange="S.pcart[${i}].q=this.value;render()"></label></div></div>`;
     }).join('');
-    return scanbar('buy') + (h ? h + `<div class="c"><div class="bar"><span>Позиций / штук</span><b>${S.pcart.length} / ${u}</b></div><div class="bar"><span>Сумма закупки</span><b>${fmt(t)}</b></div></div><button class="pb big" onclick="buyAsk()">Подтвердить закупку</button>` : '');
+    return scanbar('buy') 
+      + `<div id="bbody">${buySearchBody()}</div>`
+      + (h ? (S.bsq ? `<h2 style="margin-top:16px">В закупке (${S.pcart.length})</h2>` : '') + h + `<div class="c"><div class="bar"><span>Позиций / штук</span><b>${S.pcart.length} / ${u}</b></div><div class="bar"><span>Сумма закупки</span><b>${fmt(t)}</b></div></div><button class="pb big" onclick="buyAsk()">Подтвердить закупку</button>` : (!S.bsq ? `<p class="mu" style="text-align:center;padding:24px 0">Введите название или штрихкод товара выше</p>` : ''));
   },
   invForm() {
     const it = Object.entries(S.inv);
@@ -798,7 +826,12 @@ function find(q) {
 // Обработка ручного поиска (когда нажали кнопку "Найти")
 function look(m) {
   const e = $('#sq'), v = e.value;
-  if (m === 'sale') { const l = find(v); if (l.length > 1 && !l.every(p => p.barcode === v.trim())) return; S.sq = ''; }  // несколько совпадений по названию — выбор в списке под строкой
+  if (m === 'sale' || m === 'buy') {
+    const l = find(v);
+    if (l.length > 1 && !l.every(p => p.barcode === v.trim())) return;
+    if (m === 'sale') S.sq = '';
+    if (m === 'buy') S.bsq = '';
+  }
   e.value = ''; code(m, v);
 }
 
@@ -1058,7 +1091,7 @@ function buyAsk() {
   ask('Подтвердить закупку? Остатки увеличатся.', () => run(async () => {
     const { error } = await sb.rpc('receive', { p_branch: BRANCH, p_items: c.map(l => ({ id: l.id, q: parseInt(l.q), cost: r2(+l.cost) })) });
     if (error) throw error;
-    S.pcart = []; S.win = null; await load(); await loadDocs('p'); toast('Закупка сохранена', 'ok');
+    S.pcart = []; S.win = null; S.bsq = ''; await load(); await loadDocs('p'); toast('Закупка сохранена', 'ok');
   }));
 }
 
@@ -1113,7 +1146,7 @@ async function enterStore(d) {
 }
 async function enterBranch(b) {
   BRANCH = b.id; try { localStorage.setItem('branch_' + STORE, b.id); } catch (e) {}
-  S.rb = null; S.docs = {}; S.cart = []; S.pcart = []; S.inv = {}; S.win = null; S.tab = 'home';
+  S.rb = null; S.docs = {}; S.cart = []; S.pcart = []; S.inv = {}; S.win = null; S.tab = 'home'; S.bsq = '';
   showLoading('Подгружаем товары…', b.name || '');
   try { await load(); await render(); } catch (e) { toast(e.message || String(e), 'er'); }
 }
