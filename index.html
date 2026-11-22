@@ -154,11 +154,11 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 
 <nav id="nav">
   <button data-t="home" onclick="go('home')"><span>🏠</span>Главная</button>
-  <button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button>
   <button class="owner-only" data-t="buy" onclick="go('buy')"><span>📥</span>Закупка</button>
   <button data-t="sale" onclick="go('sale')"><span>🛒</span>Продажа</button>
-  <button class="owner-only" data-t="inv" onclick="go('inv')"><span>📋</span>Сверка</button>
-  <button class="owner-only" data-t="rep" onclick="go('rep')"><span>📊</span>Отчёты</button>
+  <button data-t="prod" onclick="go('prod')"><span>📦</span>Товары</button>
+  <button class="owner-only" data-t="exp" onclick="go('exp')"><span>💸</span>Расходы</button>
+  <button class="owner-only" data-t="more" onclick="go('more')"><span>⋯</span>Ещё</button>
 </nav>
 
 <!-- Окно камеры сканера штрихкодов -->
@@ -228,7 +228,7 @@ let BRANCH = null, BRANCHES = [], IS_ADMIN = false,   // текущий фили
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.10.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
+const APP_VERSION = '1.11.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 // Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
 // при запуске показывалась на экране, а не молча останавливала приложение.
@@ -262,6 +262,8 @@ const S = {
   rb: null,             // Филиал в отчётах: id или 'all'
   cartView: false,      // В окне продажи: показан чек (true) или каталог (false)
   sq: '', cat: null, sub: null, lim: 30,   // Поиск, выбранная категория/подкатегория, сколько товаров показано
+  hp: 'day',            // Главная: период показателей ('day' | 'month')
+  ef: monthStart(), et: today(), ecat: '', elim: 50,   // Расходы: период, категория, сколько записей показано
   from: today(),        // Начальная дата для отчетов
   to: today()           // Конечная дата для отчетов 
 };
@@ -330,6 +332,7 @@ async function load() {
 
   const [all, bs, cats] = await Promise.all([pProducts, pStock, pCats]);
   CATS = cats;
+  await loadECats();
   P = all.map(p => ({ ...p, stock_quantity: bs[p.id] ? bs[p.id].stock_quantity : 0, cost_price: bs[p.id] ? +bs[p.id].cost_price : 0 }));
 }
 
@@ -379,7 +382,8 @@ const scanbar = m => `<div class="sb"><input id="sq" placeholder="${m === 'sale'
 
 // Объект V содержит функции отрисовки для каждой вкладки навигации
 /* Кнопка «Новый документ» на вкладке и заголовки окна создания */
-const WN = { cats: ['', '', 'Категории'], sale: ['Новая продажа', 'Продолжить продажу', 'Продажа'], buy: ['Новая закупка', 'Продолжить закупку', 'Закупка'], inv: ['Новая сверка', 'Продолжить сверку', 'Сверка остатков'] };
+const NAVT = { rep: 'more', inv: 'more' }, BACK = { rep: 1, inv: 1 };   // Отчёты и Сверка живут во вкладке «Ещё»
+const WN = { ecats: ['', '', 'Категории расходов'], cats: ['', '', 'Категории'], sale: ['Новая продажа', 'Продолжить продажу', 'Продажа'], buy: ['Новая закупка', 'Продолжить закупку', 'Закупка'], inv: ['Новая сверка', 'Продолжить сверку', 'Сверка остатков'] };
 const newBtn = (w, n) => `<button class="pb big" style="margin:0 0 8px" onclick="openWin('${w}')">${n ? WN[w][1] + ' (' + n + ')' : WN[w][0]}</button>`;
 function openWin(w) { if (w === 'sale') { S.cartView = false; S.sq = ''; S.cat = null; S.sub = null; S.lim = 30; } S.win = w; render(); const e = $('#win'); if (e) e.scrollTop = 0; }
 function closeWin() { S.win = null; render(); }
@@ -503,11 +507,136 @@ const switchers = () => {
 };
 const rbSel = () => BRANCHES.length < 2 ? '' : `<label style="margin:0 0 8px">Филиал<select onchange="S.rb=this.value;render()" style="width:100%;min-height:48px;border-radius:12px;border:1px solid var(--br);background:var(--cd);color:var(--tx);padding:0 12px;font:inherit"><option value="all" ${S.rb === 'all' ? 'selected' : ''}>Все филиалы</option>${BRANCHES.map(b => `<option value="${b.id}" ${(S.rb || BRANCH) === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>`;
 
+/* ===== Расходы и финансовый результат ===== */
+function ymd(d) { return dk(d.getTime()); }
+function monthStart() { const d = new Date(); return ymd(new Date(d.getFullYear(), d.getMonth(), 1)); }
+function weekStart() { const d = new Date(); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return ymd(d); }
+const fmtDate = d => String(d).split('-').reverse().join('.');
+const selSt = 'width:100%;min-height:48px;border-radius:12px;border:1px solid var(--br);background:var(--cd);color:var(--tx);padding:0 12px;font:inherit';
+let ECATS = [], EXP_OK = true, EXPC = {};
+async function loadECats() {
+  const { data, error } = await sb.from('expense_categories').select('*').eq('store_id', STORE).order('sort_order').order('created_at');
+  if (error) { EXP_OK = false; ECATS = []; return; }   // миграция расходов ещё не применена — остальное приложение работает
+  EXP_OK = true; ECATS = data;
+}
+const ecatName = id => (ECATS.find(c => c.id === id) || {}).name || '—';
+async function expList(f, t, ids, cat) {
+  let all = [], from = 0;
+  for (;;) {
+    let q = sb.from('expenses').select('id,branch_id,category_id,amount,spent_on,note,created_at').eq('store_id', STORE).in('branch_id', ids).eq('deleted', false)
+      .gte('spent_on', f).lte('spent_on', t).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).range(from, from + 999);
+    if (cat) q = q.eq('category_id', cat);
+    const { data, error } = await q; if (error) throw error;
+    all = all.concat(data); if (data.length < 1000) break; from += 1000;
+  }
+  const by = {}; let sum = 0; all.forEach(e => { sum += +e.amount; by[e.category_id] = (by[e.category_id] || 0) + +e.amount; });
+  return { list: all, sum: r2(sum), by };
+}
+const noExp = { list: [], sum: 0, by: {} };
+// Выручка − себестоимость продаж = валовая прибыль; валовая прибыль − операционные расходы = прибыль после расходов.
+// Закупки товара в расходы НЕ входят: себестоимость уже учтена при продаже.
+const pl = (a, ex) => ({ rev: a.rev, cost: a.cost, gp: a.gp, exp: ex.sum, net: r2(a.gp - ex.sum) });
+const netClr = n => n < 0 ? 'var(--er)' : 'var(--ok)';
+const periodBar = (fk, tk) => {
+  const t0 = today(), pr = [['Сегодня', t0], ['Неделя', weekStart()], ['Месяц', monthStart()]];
+  return `<div class="chips">${pr.map(([n, f]) => `<button class="${S[fk] === f && S[tk] === t0 ? 'on' : ''}" onclick="setPeriod('${fk}','${tk}','${f}')">${n}</button>`).join('')}</div>
+  <div class="r"><label style="flex:1;margin:0">С<input type="date" value="${S[fk]}" onchange="S.${fk}=this.value||today();render()"></label><label style="flex:1;margin:0">По<input type="date" value="${S[tk]}" onchange="S.${tk}=this.value||today();render()"></label></div>`;
+};
+function setPeriod(fk, tk, f) { S[fk] = f; S[tk] = today(); S.elim = 50; render(); }
+
+function expEdit(id) {
+  if (!ECATS.length) return toast('Сначала добавьте категории расходов', 'er');
+  const e = id ? EXPC[id] : null; T = { id, cat: e ? e.category_id : ECATS[0].id };
+  modal(`<h2>${e ? 'Расход' : 'Новый расход'}</h2>
+  <label>Сумма, сом<input id="xa" inputmode="decimal" value="${e ? e.amount : ''}"></label>
+  <label>Дата<input id="xd" type="date" value="${e ? e.spent_on : today()}"></label>
+  <label>Категория<select id="xc" style="${selSt};margin-top:4px" onchange="$('#xcn').style.display=this.value==='__new'?'block':'none'">${ECATS.map(c => `<option value="${c.id}" ${c.id === T.cat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}<option value="__new">＋ Новая категория…</option></select></label>
+  <input id="xcn" placeholder="Название новой категории" style="display:none;margin-bottom:10px">
+  <label>Комментарий<input id="xn" value="${esc(e ? e.note || '' : '')}"></label>
+  ${!e && BRANCHES.length > 1 ? `<label>Филиал<select id="xb" style="${selSt};margin-top:4px">${BRANCHES.map(b => `<option value="${b.id}" ${b.id === BRANCH ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>` : ''}
+  <div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="expSave()">Сохранить</button></div>
+  ${e ? `<button class="big" style="background:var(--er);color:#fff;border-color:var(--er)" onclick="ask('Удалить расход?',()=>expDel())">Удалить</button>` : ''}`);
+}
+function expSave() {
+  const tid = T.id;
+  run(async () => {
+    const amount = +String($('#xa').value).replace(',', '.'), spent = $('#xd').value, note = $('#xn').value.trim();
+    if (!(amount > 0)) throw new Error('Введите сумму больше нуля');
+    if (!spent) throw new Error('Укажите дату');
+    let cat = $('#xc').value;
+    if (cat === '__new') { const nn = $('#xcn').value.trim(); if (!nn) throw new Error('Введите название категории'); cat = await createECat(nn); }
+    if (tid) { const { error } = await sb.from('expenses').update({ category_id: cat, amount: r2(amount), spent_on: spent, note: note || null }).eq('id', tid); if (error) throw error; }
+    else { const br = $('#xb') ? $('#xb').value : BRANCH; const { error } = await sb.from('expenses').insert({ store_id: STORE, branch_id: br, category_id: cat, amount: r2(amount), spent_on: spent, note: note || null }); if (error) throw error; }
+    closeModal(); toast('Расход сохранён', 'ok');
+  });
+}
+function expDel() {
+  const tid = T.id;
+  run(async () => { const { error } = await sb.from('expenses').update({ deleted: true }).eq('id', tid); if (error) throw error; toast('Расход удалён', 'ok'); });
+}
+async function createECat(name) {
+  const { data, error } = await sb.from('expense_categories').insert({ store_id: STORE, name, sort_order: ECATS.length ? Math.max(...ECATS.map(c => c.sort_order)) + 1 : 0 }).select().single();
+  if (error) throw new Error(error.code === '23505' ? 'Такая категория уже есть' : error.message);
+  await loadECats(); return data.id;
+}
+const ecatBtn = (c, i) => `<div class="c r"><div class="f"><b>${esc(c.name)}</b></div><button class="x" aria-label="Выше" ${i === 0 ? 'disabled' : ''} onclick="ecatMove('${c.id}',-1)">↑</button><button class="x" aria-label="Ниже" ${i === ECATS.length - 1 ? 'disabled' : ''} onclick="ecatMove('${c.id}',1)">↓</button><button class="x" aria-label="Переименовать" onclick="ecatEdit('${c.id}')">✎</button><button class="x" aria-label="Удалить" onclick="ecatDel('${c.id}')">🗑</button></div>`;
+function ecatEdit(id) {
+  const c = ECATS.find(x => x.id === id); T = { id };
+  modal(`<h2>${c ? 'Переименовать' : 'Новая категория расходов'}</h2><label>Название<input id="en" value="${esc(c ? c.name : '')}"></label><div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="ecatSave()">Сохранить</button></div>`);
+}
+function ecatSave() {
+  const tid = T.id;
+  run(async () => {
+    const name = $('#en').value.trim(); if (!name) throw new Error('Введите название');
+    if (tid) { const { error } = await sb.from('expense_categories').update({ name }).eq('id', tid); if (error) throw new Error(error.code === '23505' ? 'Такая категория уже есть' : error.message); await loadECats(); }
+    else await createECat(name);
+    closeModal();
+  });
+}
+function ecatMove(id, d) {
+  run(async () => {
+    const sib = ECATS.slice(), i = sib.findIndex(x => x.id === id), j = i + d; if (j < 0 || j >= sib.length) return;
+    [sib[i], sib[j]] = [sib[j], sib[i]];
+    for (let k = 0; k < sib.length; k++) if (sib[k].sort_order !== k) { const { error } = await sb.from('expense_categories').update({ sort_order: k }).eq('id', sib[k].id); if (error) throw error; }
+    await loadECats();
+  });
+}
+async function ecatDel(id) {
+  const c = ECATS.find(x => x.id === id);
+  const { count, error } = await sb.from('expenses').select('id', { count: 'exact', head: true }).eq('category_id', id);
+  if (error) return toast(error.message, 'er');
+  if (!count) return ask(`Удалить «${c.name}»?`, () => ecatRemove(id));
+  T = { id };
+  modal(`<h2>В «${esc(c.name)}» есть расходы (${count})</h2><label>Перенести их в<select id="emv" style="${selSt};margin-top:4px">${ECATS.filter(x => x.id !== id).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label><div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="ecatMoveDel()">Перенести и удалить</button></div>`);
+}
+async function ecatRemoveNow(id) { const { error } = await sb.from('expense_categories').delete().eq('id', id); if (error) throw new Error(/foreign key/i.test(error.message) ? 'В категории остались расходы' : error.message); await loadECats(); }
+function ecatRemove(id) { run(() => ecatRemoveNow(id)); }
+function ecatMoveDel() {
+  const tid = T.id;
+  run(async () => {
+    const to = $('#emv').value; if (!to) throw new Error('Нет другой категории для переноса');
+    const u = await sb.from('expenses').update({ category_id: to }).eq('category_id', tid); if (u.error) throw u.error;
+    await ecatRemoveNow(tid); closeModal();
+  });
+}
+const ECAT_DEFAULTS = ['Аренда помещения', 'Заработная плата', 'Доставка и транспорт', 'Реклама и продвижение', 'Упаковка и расходные материалы', 'Коммунальные услуги', 'Прочие расходы'];
+function ecatSeed() {
+  run(async () => {
+    const { error } = await sb.from('expense_categories').insert(ECAT_DEFAULTS.map((name, i) => ({ store_id: STORE, name, sort_order: i }))); if (error) throw error;
+    await loadECats();
+  });
+}
+
 const V = {
   async home() {
-    const a = await stats(today(), today()), low = P.filter(p => p.stock_quantity <= LOW);
-    return `<h1>${esc(STORE_NAME)}</h1>${switchers()}<div class="g owner-only"><div class="c w"><small>Продажи сегодня</small><b>${fmt(a.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div><div class="c"><small>Продаж</small><b>${a.n}</b></div></div><h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}<p class="mu" style="text-align:center"><small>Версия ${APP_VERSION}</small></p>`;
+    const f = S.hp === 'month' ? monthStart() : today();
+    const [a, ex] = await Promise.all([stats(f, today()), EXP_OK ? expList(f, today(), [BRANCH], null) : Promise.resolve(noExp)]);
+    const r = pl(a, ex), low = P.filter(p => p.stock_quantity <= LOW);
+    return `<h1>${esc(STORE_NAME)}</h1>${switchers()}<div class="owner-only"><div class="chips"><button class="${S.hp === 'month' ? '' : 'on'}" onclick="S.hp='day';render()">Сегодня</button><button class="${S.hp === 'month' ? 'on' : ''}" onclick="S.hp='month';render()">Месяц</button></div>
+    <div class="g"><div class="c w"><small>Выручка · ${a.n} продаж</small><b>${fmt(r.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(r.gp)}</b></div><div class="c"><small>Расходы</small><b>${fmt(r.exp)}</b></div><div class="c w"><small>Прибыль после расходов</small><b style="color:${netClr(r.net)}">${fmt(r.net)}</b></div></div></div>
+    <h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}<p class="mu" style="text-align:center"><small>Версия ${APP_VERSION}</small></p>`;
   },
+
   prod() { 
     return `<h1>Товары</h1><div class="row"><button class="pb owner-only" onclick="pform({})">Новый товар</button><button class="owner-only" onclick="openWin('cats')">Категории</button><button class="x" aria-label="Сканер" onclick="scanBarcode('prod')" style="flex:none;width:48px;font-size:22px">📷</button></div><input id="ps" placeholder="Поиск" oninput="plist()"><div id="pl"></div>`; 
   },
@@ -537,25 +666,48 @@ const V = {
   sale() { return newBtn('sale', S.cart.length) + journal('s'); },
   buy() { return newBtn('buy', S.pcart.length) + journal('p'); },
   inv() { return newBtn('inv', Object.keys(S.inv).length) + journal('i'); },
+  ecatsForm() { return `<div class="row"><button class="pb" onclick="ecatEdit(null)">＋ Новая категория</button></div>` + (ECATS.length ? ECATS.map(ecatBtn).join('') : `<button class="big" onclick="ecatSeed()">Добавить стандартные категории</button>`); },
+  async exp() {
+    if (!EXP_OK) return `<h1>Расходы</h1><p class="mu">Раздел не подключён: примените миграцию базы данных для расходов.</p>`;
+    if (!ECATS.length) return `<h1>Расходы</h1><button class="pb big" onclick="ecatSeed()">Добавить стандартные категории</button><button class="big" onclick="openWin('ecats')">Создать свои категории</button>`;
+    const ex = await expList(S.ef, S.et, RB(), S.ecat || null);
+    EXPC = {}; ex.list.forEach(e => EXPC[e.id] = e);
+    return `<h1>Расходы</h1>${rbSel()}${periodBar('ef', 'et')}
+    <label style="margin:8px 0"><select onchange="S.ecat=this.value;S.elim=50;render()" style="${selSt}"><option value="">Все категории</option>${ECATS.map(c => `<option value="${c.id}" ${S.ecat === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+    <div class="c"><small>Расходы за период</small><b style="display:block;font-size:24px">${fmt(ex.sum)}</b><small>записей: ${ex.list.length}</small></div>
+    <button class="pb big" style="margin-top:0" onclick="expEdit(null)">＋ Добавить расход</button>`
+      + ex.list.slice(0, S.elim).map(e => `<div class="c r" onclick="expEdit('${e.id}')" style="cursor:pointer"><div class="f"><b>${esc(ecatName(e.category_id))}</b><small>${fmtDate(e.spent_on)}${e.note ? ' · ' + esc(e.note) : ''}</small></div><b>${fmt(e.amount)}</b></div>`).join('')
+      + (ex.list.length > S.elim ? `<button class="big" onclick="S.elim+=50;render()">Показать ещё (${ex.list.length - S.elim})</button>` : '');
+  },
+  more() {
+    const b = (t, f) => `<button class="big" style="text-align:left" onclick="${f}">${t}</button>`;
+    return `<h1>Ещё</h1>` + b('📊 Отчёты', "go('rep')") + b('📋 Сверка остатков', "go('inv')") + b('🗂 Категории товаров', "openWin('cats')") + b('🏷 Категории расходов', "openWin('ecats')")
+      + (BRANCHES.length > 1 ? b('🏬 Сменить филиал', 'chooseBranch()') : '') + (IS_ADMIN ? b('🔄 Сменить магазин', 'chooseStore()') : '');
+  },
   async rep() {
-    const a = await stats(S.from, S.to, RB());
-    return `<h1>Отчёты</h1>${rbSel()}<div class="r"><label style="flex:1;margin:0">С<input type="date" value="${S.from}" onchange="S.from=this.value||today();render()"></label><label style="flex:1;margin:0">По<input type="date" value="${S.to}" onchange="S.to=this.value||today();render()"></label></div>
+    const ids = RB();
+    const [a, ex] = await Promise.all([stats(S.from, S.to, ids), EXP_OK ? expList(S.from, S.to, ids, null) : Promise.resolve(noExp)]);
+    const f = pl(a, ex), cats = Object.entries(ex.by).sort((x, y) => y[1] - x[1]);
+    return `<h1>Отчёты</h1>${rbSel()}${periodBar('from', 'to')}
     <div class="g" style="margin-top:10px">
-      <div class="c w"><small>Выручка</small><b>${fmt(a.rev)}</b></div>
-      <div class="c"><small>Себестоимость</small><b>${fmt(a.cost)}</b></div>
-      <div class="c"><small>Валовая прибыль</small><b>${fmt(a.gp)}</b></div>
+      <div class="c w"><small>Выручка</small><b>${fmt(f.rev)}</b></div>
+      <div class="c"><small>Себестоимость продаж</small><b>${fmt(f.cost)}</b></div>
+      <div class="c"><small>Валовая прибыль</small><b>${fmt(f.gp)}</b></div>
+      <div class="c"><small>Операционные расходы</small><b>${fmt(f.exp)}</b></div>
+      <div class="c"><small>Прибыль после расходов</small><b style="color:${netClr(f.net)}">${fmt(f.net)}</b></div>
       <div class="c"><small>Маржа</small><b>${a.rev ? r2(a.gp / a.rev * 100) : 0}%</b></div>
       <div class="c"><small>Продаж / штук</small><b>${a.n} / ${a.u}</b></div>
       <div class="c w"><small>Средний чек</small><b>${fmt(a.n ? a.rev / a.n : 0)}</b></div>
-    </div>`;
+    </div>`
+      + (cats.length ? `<h2>Расходы по категориям</h2>` + cats.map(([id, v]) => `<div class="bar"><span>${esc(ecatName(id))}</span><b>${fmt(v)}</b></div>`).join('') : '');
   }
 };
 
 /* Главная функция обновления DOM */
 async function render() {
   $('#nav').style.display = 'flex';
-  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === S.tab));
-  const t = S.tab, h = await V[t]();
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === (NAVT[S.tab] || S.tab)));
+  const t = S.tab, h = (BACK[t] ? '<button class="sm" style="margin-bottom:8px" onclick="go(\'more\')">← Ещё</button>' : '') + await V[t]();
   if (t !== S.tab) return;
   $('#app').innerHTML = h;
   const w = $('#win');
