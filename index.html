@@ -75,6 +75,8 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:9}
 .ov[hidden]{display:none}
 .sh{background:var(--bg);width:100%;max-width:640px;max-height:90%;overflow:auto;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px))}
+.sh.tall{height:92vh;max-height:94vh;display:flex;flex-direction:column}
+.sh-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:2px}
 
 /* Всплывающие уведомления (Toast) сверху */
 #toast{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;padding:12px 14px;border-radius:12px;display:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)}
@@ -284,8 +286,8 @@ async function run(fn) {
 }
 
 /* Управление модальными окнами */
-function modal(h) { $('#mb').innerHTML = h; $('#md').hidden = false; }
-function closeModal() { $('#md').hidden = true; }
+function modal(h, tall) { $('#mb').className = 'sh' + (tall ? ' tall' : ''); $('#mb').innerHTML = h; $('#md').hidden = false; }
+function closeModal() { $('#md').hidden = true; $('#mb').className = 'sh'; }
 function ask(t, y) { ASK = y; modal(`<h2>${esc(t)}</h2><div class="row"><button onclick="closeModal()">Нет</button><button class="pb" onclick="closeModal();ASK()">Да</button></div>`); }
 
 /* 
@@ -768,35 +770,28 @@ async function dataUrlToBlob(dataUrl) {
   }
 }
 
-function photoBox(photoUrl) {
-  if (photoUrl) {
-    return `<div id="pp" style="position:relative;width:100%;background:var(--cd);border-radius:12px;overflow:hidden;text-align:center">
-      <img src="${esc(photoUrl)}" onclick="$('#pf').click()" style="width:100%;max-height:120px;object-fit:cover;display:block;cursor:pointer" alt="">
-      <button type="button" aria-label="Удалить фото" onclick="delPhoto(event)" style="position:absolute;top:6px;right:6px;width:30px;height:30px;padding:0;background:rgba(0,0,0,0.65);color:#fff;border-radius:50%;border:none;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3)">✕</button>
-    </div>`;
-  }
-  return `<div id="pp" onclick="$('#pf').click()" style="cursor:pointer;width:100%;background:var(--cd);border:1px dashed var(--br);border-radius:12px;padding:12px 0;text-align:center;color:var(--mu)">
-    <span style="font-size:18px;vertical-align:middle">📷</span> <small style="font-size:14px;font-weight:600">Добавить фото</small>
-  </div>`;
-}
-
 function pform(p, cb) {
   const pc = catById(p.category_id), cat0 = pc ? (pc.parent_id || pc.id) : '', sub0 = pc && pc.parent_id ? pc.id : '';
   T = { photo: p.photo || null, photoBlob: null, photoDeleted: false, cb, cat: cat0 }; const e = !!p.id;
   modal(`<h2>${e ? 'Товар' : 'Новый товар'}</h2>
-  <div style="margin-bottom:10px">
-    ${photoBox(p.photo)}
-    <input id="pf" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
+  <div class="sh-body">
+    <div style="margin-bottom:12px;text-align:center">
+      <div id="pp" onclick="$('#pf').click()" style="cursor:pointer;width:100%;background:var(--bg);border-radius:12px;overflow:hidden;text-align:center">
+        ${p.photo ? `<img src="${esc(p.photo)}" style="width:100%;max-height:220px;object-fit:contain;display:block;margin:0 auto" alt="">` : `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`}
+      </div>
+      <div id="pdel" style="margin-top:6px">${p.photo ? '<button type="button" class="sm" style="color:var(--er);background:transparent;border:none;cursor:pointer" onclick="delPhoto(event)">Удалить фото</button>' : ''}</div>
+      <input id="pf" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
+    </div>
+    <label>Название<input id="fn" value="${esc(p.name || '')}"></label>
+    <div id="cf">${catFields(cat0, sub0)}</div>
+    <label>Штрихкод<input id="fb" inputmode="numeric" value="${esc(p.barcode || '')}"></label>
+    <label>Цена продажи, сом<input id="fp" inputmode="decimal" value="${p.retail_price || ''}"></label>
+    ${e ? `<small style="display:block;margin-bottom:6px">Остаток: ${p.stock_quantity} шт (меняется закупкой и сверкой остатков)</small>` : ''}
   </div>
-  <label>Название<input id="fn" value="${esc(p.name || '')}"></label>
-  <div id="cf">${catFields(cat0, sub0)}</div>
-  <label>Штрихкод<input id="fb" inputmode="numeric" value="${esc(p.barcode || '')}"></label>
-  <label>Цена продажи, сом<input id="fp" inputmode="decimal" value="${p.retail_price || ''}"></label>
-  ${e ? `<small style="display:block;margin-bottom:6px">Остаток: ${p.stock_quantity} шт (меняется закупкой и сверкой остатков)</small>` : ''}
-  <div class="row" style="position:sticky;bottom:-14px;background:var(--bg);padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));margin:10px -14px -14px;padding-left:14px;padding-right:14px;border-top:1px solid var(--br);z-index:4">
+  <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--br);flex:none">
     <button onclick="closeModal()">Отмена</button>
     <button class="pb" onclick="psave('${p.id || ''}')">Сохранить</button>
-  </div>`);
+  </div>`, true);
 }
 
 function delPhoto(e) {
@@ -805,8 +800,8 @@ function delPhoto(e) {
   T.photo = null;
   T.photoBlob = null;
   T.photoDeleted = true;
-  const pp = $('#pp');
-  if (pp) pp.outerHTML = photoBox(null);
+  $('#pp').innerHTML = `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`;
+  const pd = $('#pdel'); if (pd) pd.innerHTML = '';
 }
 
 // Изменение размера и компрессия фотографии перед отправкой (600px для четкости на экранах телефонов)
@@ -824,8 +819,8 @@ function photo(inp) {
     T.photoDataUrl = dataUrl;
     T.photo = dataUrl;
     T.photoDeleted = false;
-    const pp = $('#pp');
-    if (pp) pp.outerHTML = photoBox(dataUrl);
+    $('#pp').innerHTML = `<img src="${dataUrl}" style="width:100%;max-height:220px;object-fit:contain;display:block;margin:0 auto" alt="">`;
+    const pd = $('#pdel'); if (pd) pd.innerHTML = '<button type="button" class="sm" style="color:var(--er);background:transparent;border:none;cursor:pointer" onclick="delPhoto(event)">Удалить фото</button>';
     if (c.toBlob) {
       c.toBlob(b => { T.photoBlob = b; }, 'image/jpeg', 0.8);
     } else {
