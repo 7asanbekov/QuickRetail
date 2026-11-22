@@ -226,7 +226,7 @@ let BRANCH = null, BRANCHES = [], IS_ADMIN = false,   // текущий фили
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.9.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
+const APP_VERSION = '1.10.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 // Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
 // при запуске показывалась на экране, а не молча останавливала приложение.
@@ -359,7 +359,7 @@ async function stats(f, t, ids) {
 =========================================================
 */
 // Шаблон фото в списке товаров
-const ph=p=>p.photo?`<img class="th" src="${esc(p.photo)}" alt="">`:'<div class="ph">📦</div>';
+const ph=p=>p.photo?`<img class="th" src="${esc(p.photo)}" alt="" loading="lazy">`:'<div class="ph">📦</div>';
 
 // Шаблон строки товара
 const row = p => `<div class="c r" onclick="pform(G('${p.id}'))" style="cursor:pointer">${ph(p)}<div class="f"><b>${esc(nm(p))}</b><small>${esc([catPath(p), p.barcode].filter(Boolean).join(' · '))}</small></div><div style="text-align:right"><b class="${p.stock_quantity <= LOW ? 'lo' : ''}">${p.stock_quantity} шт</b><br><small>${p.retail_price ? fmt(p.retail_price) : 'без цены'}</small></div></div>`;
@@ -745,14 +745,38 @@ function closeCam() {
  7. РЕДАКТОР ТОВАРА (Создание и Изменение)
 =========================================================
 */
+// Генератор UUID для надежного создания ID товара на клиенте
+function genUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Конвертер Data URL в Blob для отправки в Supabase Storage
+async function dataUrlToBlob(dataUrl) {
+  try {
+    return await (await fetch(dataUrl)).blob();
+  } catch (e) {
+    const parts = dataUrl.split(',');
+    const mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/jpeg';
+    const bin = atob(parts[1]);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+}
+
 function pform(p, cb) {
   const pc = catById(p.category_id), cat0 = pc ? (pc.parent_id || pc.id) : '', sub0 = pc && pc.parent_id ? pc.id : '';
-  T = { photo: p.photo || null, cb, cat: cat0 }; const e = !!p.id;
+  T = { photo: p.photo || null, photoBlob: null, photoDeleted: false, cb, cat: cat0 }; const e = !!p.id;
   modal(`<h2>${e ? 'Товар' : 'Новый товар'}</h2>
-  <div class="r" style="margin-bottom:12px;justify-content:center">
+  <div class="r" style="margin-bottom:12px;justify-content:center;flex-direction:column;align-items:center">
     <div id="pp" onclick="$('#pf').click()" style="cursor:pointer;width:100%;background:var(--bg);border-radius:12px;overflow:hidden;text-align:center">
       ${p.photo ? `<img src="${esc(p.photo)}" style="width:100%;max-height:220px;object-fit:contain;display:block" alt="">` : `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`}
     </div>
+    <div id="pdel" style="margin-top:6px">${p.photo ? '<button type="button" class="sm" style="color:var(--er);background:transparent" onclick="delPhoto(event)">Удалить фото</button>' : ''}</div>
     <input id="pf" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
   </div>
   <label>Название<input id="fn" value="${esc(p.name || '')}"></label>
@@ -763,23 +787,43 @@ function pform(p, cb) {
   <div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="psave('${p.id || ''}')">Сохранить</button></div>`);
 }
 
-// Изменение размера и компрессия фотографии перед отправкой
+function delPhoto(e) {
+  if (e) e.stopPropagation();
+  if (!T) return;
+  T.photo = null;
+  T.photoBlob = null;
+  T.photoDeleted = true;
+  $('#pp').innerHTML = `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`;
+  const pd = $('#pdel'); if (pd) pd.innerHTML = '';
+}
+
+// Изменение размера и компрессия фотографии перед отправкой (600px для четкости на экранах телефонов)
 function photo(inp) {
   const f = inp.files[0]; if (!f) return;
   if (!/^image\//.test(f.type) || f.size > 20e6) return toast('Нужна картинка до 20 МБ', 'er');
   const im = new Image(), u = URL.createObjectURL(f);
   im.onload = () => {
-    const k = Math.min(1, 260 / Math.max(im.width, im.height)), c = document.createElement('canvas');
-    c.width = im.width * k; c.height = im.height * k;
+    const maxSide = 600;
+    const k = Math.min(1, maxSide / Math.max(im.width, im.height)), c = document.createElement('canvas');
+    c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
     c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-    T.photo = c.toDataURL('image/jpeg', 0.65); 
     URL.revokeObjectURL(u);
-    $('#pp').innerHTML = `<img src="${T.photo}" style="width:100%;max-height:220px;object-fit:contain;display:block" alt="">`;
+    const dataUrl = c.toDataURL('image/jpeg', 0.8);
+    T.photoDataUrl = dataUrl;
+    T.photo = dataUrl;
+    T.photoDeleted = false;
+    $('#pp').innerHTML = `<img src="${dataUrl}" style="width:100%;max-height:220px;object-fit:contain;display:block" alt="">`;
+    const pd = $('#pdel'); if (pd) pd.innerHTML = '<button type="button" class="sm" style="color:var(--er);background:transparent" onclick="delPhoto(event)">Удалить фото</button>';
+    if (c.toBlob) {
+      c.toBlob(b => { T.photoBlob = b; }, 'image/jpeg', 0.8);
+    } else {
+      dataUrlToBlob(dataUrl).then(b => { T.photoBlob = b; });
+    }
   };
   im.onerror = () => toast('Не удалось прочитать фото', 'er'); im.src = u;
 }
 
-// Сохранение карточки товара в БД
+// Сохранение карточки товара в БД + выгрузка фото в Supabase Storage
 function psave(id) {
   run(async () => {
     const n = $('#fn').value.trim(), b = $('#fb').value.trim(), r = num($('#fp').value);
@@ -790,11 +834,43 @@ function psave(id) {
     let catId = null; const fc = $('#fc').value, fs = $('#fs') ? $('#fs').value : '';
     if (fc === '__new') { const nn = $('#fcn').value.trim(); if (!nn) throw new Error('Введите название категории'); catId = await createCat(nn, null); }
     else if (fc) { catId = fc; if (fs === '__new') { const nn = $('#fsn').value.trim(); if (!nn) throw new Error('Введите название подкатегории'); catId = await createCat(nn, fc); } else if (fs) catId = fs; }
-    const row_data = { name: n || null, barcode: b || null, retail_price: r, photo: T.photo || null, category_id: catId };
+
+    const prodId = id || genUUID();
+    let photoUrl = T.photo || null;
+
+    if (T.photoDeleted) {
+      photoUrl = null;
+    } else if (T.photoBlob) {
+      const filePath = `${STORE}/${prodId}.jpg`;
+      try {
+        const { error: upErr } = await sb.storage.from('product-photos').upload(filePath, T.photoBlob, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
+        if (upErr) throw upErr;
+        const { data: pubData } = sb.storage.from('product-photos').getPublicUrl(filePath);
+        photoUrl = pubData.publicUrl + '?t=' + Date.now();
+      } catch (stErr) {
+        console.warn('Storage upload error, using fallback:', stErr);
+        photoUrl = T.photoDataUrl || T.photo || null;
+      }
+    }
+
+    const row_data = { name: n || null, barcode: b || null, retail_price: r, photo: photoUrl, category_id: catId };
     const cb = T && T.cb; let p = null;
-    if (id) { const { error } = await sb.from('products').update(row_data).eq('id', id).eq('store_id', STORE); if (error) throw error; } 
-    else { const { data, error } = await sb.from('products').insert({ ...row_data, store_id: STORE }).select().single(); if (error) throw error; p = data; }
-    closeModal(); await load(); toast('Товар сохранён', 'ok'); if (cb && p) cb(G(p.id));
+    if (id) {
+      const { error } = await sb.from('products').update(row_data).eq('id', id).eq('store_id', STORE);
+      if (error) throw error;
+    } else {
+      const { data, error } = await sb.from('products').insert({ id: prodId, ...row_data, store_id: STORE }).select().single();
+      if (error) throw error;
+      p = data;
+    }
+    closeModal();
+    await load();
+    saveCachedCatalog();
+    toast('Товар сохранён', 'ok');
+    if (cb && p) cb(G(p.id));
   });
 }
 
@@ -904,9 +980,45 @@ function saveCachedCatalog() {
     localStorage.setItem(CAT_KEY_PREFIX + STORE + '_' + BRANCH, JSON.stringify({ P, CATS, t: Date.now() }));
   } catch (e) {
     try {
-      const lightP = P.map(p => ({ ...p, photo: null }));
+      const lightP = P.map(p => ({ ...p, photo: (p.photo && p.photo.startsWith('data:image')) ? null : p.photo }));
       localStorage.setItem(CAT_KEY_PREFIX + STORE + '_' + BRANCH, JSON.stringify({ P: lightP, CATS, t: Date.now() }));
     } catch (_) {}
+  }
+}
+
+// Автоматическая фоновая миграция старых Base64-фотографий в Supabase Storage (для владельца/админа)
+async function migrateLegacyPhotos() {
+  if (ROLE !== 'owner' && !IS_ADMIN) return;
+  const legacy = P.filter(p => p.photo && typeof p.photo === 'string' && p.photo.startsWith('data:image'));
+  if (!legacy.length) return;
+  console.log(`[Storage] Найдено ${legacy.length} старых фото в Base64. Фоновная выгрузка в Storage...`);
+  let migrated = 0;
+  for (const p of legacy) {
+    try {
+      const blob = await dataUrlToBlob(p.photo);
+      const filePath = `${STORE}/${p.id}.jpg`;
+      const { error: upErr } = await sb.storage.from('product-photos').upload(filePath, blob, {
+        contentType: 'image/jpeg',
+        upsert: true
+      });
+      if (upErr) {
+        console.warn(`[Storage] Пропуск фото для ${p.name || p.id}:`, upErr.message);
+        continue;
+      }
+      const { data: pubData } = sb.storage.from('product-photos').getPublicUrl(filePath);
+      const newUrl = pubData.publicUrl + '?t=' + Date.now();
+      const { error: dbErr } = await sb.from('products').update({ photo: newUrl }).eq('id', p.id).eq('store_id', STORE);
+      if (!dbErr) {
+        p.photo = newUrl;
+        migrated++;
+      }
+    } catch (e) {
+      console.warn(`[Storage] Ошибка миграции фото товара ${p.id}:`, e);
+    }
+  }
+  if (migrated > 0) {
+    console.log(`[Storage] Успешно перенесено ${migrated} фото в Storage!`);
+    saveCachedCatalog();
   }
 }
 
@@ -967,6 +1079,7 @@ async function enterBranch(b) {
     await load();
     saveCachedCatalog();
     await render();
+    setTimeout(migrateLegacyPhotos, 1500);
   } catch (e) {
     if (!hasCache) toast(e.message || String(e), 'er');
   }
