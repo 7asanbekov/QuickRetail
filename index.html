@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
 <title>Магазин</title>
 <style>
 /* 
@@ -72,15 +72,13 @@ nav button{flex:1;border:0;border-radius:0;background:none;font-size:11px;displa
 nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 
 /* Затемнение (оверлей) и контейнер модального окна (BottomSheet) */
-.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:9;transition:bottom .2s ease}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:9}
 .ov[hidden]{display:none}
-.sh{background:var(--bg);width:100%;max-width:640px;max-height:90%;overflow:auto;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px))}
-.sh.tall{height:92vh;height:92dvh;max-height:94vh;max-height:94dvh;display:flex;flex-direction:column}
-.sh-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:2px;padding-bottom:120px}
-.sh.kbd-open #pp img{max-height:64px!important;transition:max-height .2s ease}
-.sh.kbd-open #pp div{padding:8px 0!important;font-size:18px!important}
-.sh.kbd-open #pdel{display:none}
-.sh-footer{margin-top:8px;padding-top:8px;border-top:1px solid var(--br);flex:none;background:var(--bg)}
+.sh{background:var(--bg);width:100%;max-width:640px;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:18px 18px 0 0;padding:14px 14px calc(24px + env(safe-area-inset-bottom,0px))}
+.sh-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--br);position:sticky;top:-14px;background:var(--bg);z-index:2;margin-top:-6px;padding-top:6px}
+.sh-head h2{margin:0;font-size:18px;text-align:center;flex:1}
+.sh-head .btn-cancel{background:none;border:none;color:var(--mu);font-size:15px;cursor:pointer;padding:6px 4px;font-family:inherit}
+.sh-head .btn-save{background:var(--pr);color:var(--pt);border:none;border-radius:8px;font-size:15px;font-weight:600;padding:8px 16px;cursor:pointer;font-family:inherit}
 
 /* Всплывающие уведомления (Toast) сверху */
 #toast{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;padding:12px 14px;border-radius:12px;display:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)}
@@ -257,7 +255,7 @@ let BRANCH = null, BRANCHES = [], IS_ADMIN = false,   // текущий фили
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.11.2'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
+const APP_VERSION = '1.11.3'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 /* 
 =========================================================
@@ -313,72 +311,19 @@ async function run(fn) {
 }
 
 /* Управление модальными окнами */
-function modal(h, tall) {
+function modal(h) {
   const mb = $('#mb'), md = $('#md');
-  mb.className = 'sh' + (tall ? ' tall' : '');
+  mb.className = 'sh';
   mb.innerHTML = h;
   md.hidden = false;
-  adjustModalViewport();
 }
 function closeModal() {
   const mb = $('#mb'), md = $('#md');
   md.hidden = true;
   mb.className = 'sh';
-  mb.style.height = '';
-  mb.style.maxHeight = '';
-  md.style.bottom = '';
-  mb.classList.remove('kbd-open');
+  mb.innerHTML = '';
 }
 function ask(t, y) { ASK = y; modal(`<h2>${esc(t)}</h2><div class="row"><button onclick="closeModal()">Нет</button><button class="pb" onclick="closeModal();ASK()">Да</button></div>`); }
-
-function adjustModalViewport() {
-  const md = document.getElementById('md');
-  const mb = document.getElementById('mb');
-  if (!md || md.hidden || !mb || !mb.classList.contains('tall')) return;
-  if (window.visualViewport) {
-    const vv = window.visualViewport;
-    const isKbd = vv.height < window.innerHeight * 0.85;
-    const h = Math.round(vv.height);
-    mb.style.height = (h - 10) + 'px';
-    mb.style.maxHeight = (h - 10) + 'px';
-    const bottomOffset = Math.max(0, Math.round(window.innerHeight - (vv.offsetTop + vv.height)));
-    md.style.bottom = bottomOffset + 'px';
-    mb.classList.toggle('kbd-open', isKbd);
-  }
-}
-
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', adjustModalViewport);
-  window.visualViewport.addEventListener('scroll', adjustModalViewport);
-}
-
-// Автоскролл строки в центр видимой зоны при нажатии на поле ввода
-document.addEventListener('focusin', function(e) {
-  const t = e.target;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) {
-    const mb = t.closest('#mb');
-    if (mb) {
-      mb.classList.add('kbd-open');
-      adjustModalViewport();
-      setTimeout(function() {
-        if (document.activeElement === t) {
-          t.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        }
-      }, 320);
-    }
-  }
-});
-
-document.addEventListener('focusout', function() {
-  setTimeout(function() {
-    const a = document.activeElement;
-    if (!a || (a.tagName !== 'INPUT' && a.tagName !== 'SELECT' && a.tagName !== 'TEXTAREA')) {
-      const mb = document.getElementById('mb');
-      if (mb) mb.classList.remove('kbd-open');
-      adjustModalViewport();
-    }
-  }, 150);
-});
 
 /* 
 =========================================================
@@ -1088,25 +1033,25 @@ async function dataUrlToBlob(dataUrl) {
 function pform(p, cb) {
   const pc = catById(p.category_id), cat0 = pc ? (pc.parent_id || pc.id) : '', sub0 = pc && pc.parent_id ? pc.id : '';
   T = { photo: p.photo || null, photoBlob: null, photoDeleted: false, cb, cat: cat0 }; const e = !!p.id;
-  modal(`<h2>${e ? 'Товар' : 'Новый товар'}</h2>
-  <div class="sh-body">
-    <div style="margin-bottom:12px;text-align:center">
-      <div id="pp" onclick="$('#pf').click()" style="cursor:pointer;width:100%;background:var(--bg);border-radius:12px;overflow:hidden;text-align:center">
-        ${p.photo ? `<img src="${esc(p.photo)}" style="width:100%;max-height:220px;object-fit:contain;display:block;margin:0 auto" alt="">` : `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`}
-      </div>
-      <div id="pdel" style="margin-top:6px">${p.photo ? '<button type="button" class="sm" style="color:var(--er);background:transparent;border:none;cursor:pointer" onclick="delPhoto(event)">Удалить фото</button>' : ''}</div>
-      <input id="pf" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
-    </div>
-    <label>Название<input id="fn" value="${esc(p.name || '')}"></label>
-    <div id="cf">${catFields(cat0, sub0)}</div>
-    <label>Штрихкод<input id="fb" inputmode="numeric" value="${esc(p.barcode || '')}"></label>
-    <label>Цена продажи, сом<input id="fp" inputmode="decimal" value="${p.retail_price || ''}"></label>
-    ${e ? `<small style="display:block;margin-bottom:6px">Остаток: ${p.stock_quantity} шт (меняется закупкой и сверкой остатков)</small>` : ''}
+  modal(`
+  <div class="sh-head">
+    <button type="button" class="btn-cancel" onclick="closeModal()">Отмена</button>
+    <h2>${e ? 'Товар' : 'Новый товар'}</h2>
+    <button type="button" class="btn-save" onclick="psave('${p.id || ''}')">Сохранить</button>
   </div>
-  <div class="row sh-footer">
-    <button onclick="closeModal()">Отмена</button>
-    <button class="pb" onclick="psave('${p.id || ''}')">Сохранить</button>
-  </div>`, true);
+  <div style="margin-bottom:12px;text-align:center">
+    <div id="pp" onclick="$('#pf').click()" style="cursor:pointer;width:100%;background:var(--bg);border-radius:12px;overflow:hidden;text-align:center">
+      ${p.photo ? `<img src="${esc(p.photo)}" style="width:100%;max-height:140px;object-fit:contain;display:block;margin:0 auto" alt="">` : `<div style="padding:24px 0;color:var(--mu);font-size:28px">📷<br><small style="font-size:13px">Добавить фото</small></div>`}
+    </div>
+    <div id="pdel" style="margin-top:4px">${p.photo ? '<button type="button" class="sm" style="color:var(--er);background:transparent;border:none;cursor:pointer" onclick="delPhoto(event)">Удалить фото</button>' : ''}</div>
+    <input id="pf" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
+  </div>
+  <label>Название<input id="fn" value="${esc(p.name || '')}"></label>
+  <div id="cf">${catFields(cat0, sub0)}</div>
+  <label>Штрихкод<input id="fb" inputmode="numeric" value="${esc(p.barcode || '')}"></label>
+  <label>Цена продажи, сом<input id="fp" inputmode="decimal" value="${p.retail_price || ''}"></label>
+  ${e ? `<small style="display:block;margin:6px 0 12px">Остаток: ${p.stock_quantity} шт (меняется закупкой и сверкой остатков)</small>` : ''}
+  `);
 }
 
 function delPhoto(e) {
@@ -1115,7 +1060,7 @@ function delPhoto(e) {
   T.photo = null;
   T.photoBlob = null;
   T.photoDeleted = true;
-  $('#pp').innerHTML = `<div style="padding:40px 0;color:var(--mu);font-size:32px">📷<br><small style="font-size:14px">Добавить фото</small></div>`;
+  $('#pp').innerHTML = `<div style="padding:24px 0;color:var(--mu);font-size:28px">📷<br><small style="font-size:13px">Добавить фото</small></div>`;
   const pd = $('#pdel'); if (pd) pd.innerHTML = '';
 }
 
@@ -1134,7 +1079,7 @@ function photo(inp) {
     T.photoDataUrl = dataUrl;
     T.photo = dataUrl;
     T.photoDeleted = false;
-    $('#pp').innerHTML = `<img src="${dataUrl}" style="width:100%;max-height:220px;object-fit:contain;display:block;margin:0 auto" alt="">`;
+    $('#pp').innerHTML = `<img src="${dataUrl}" style="width:100%;max-height:140px;object-fit:contain;display:block;margin:0 auto" alt="">`;
     const pd = $('#pdel'); if (pd) pd.innerHTML = '<button type="button" class="sm" style="color:var(--er);background:transparent;border:none;cursor:pointer" onclick="delPhoto(event)">Удалить фото</button>';
     if (c.toBlob) {
       c.toBlob(b => { T.photoBlob = b; }, 'image/jpeg', 0.8);
