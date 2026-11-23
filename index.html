@@ -208,8 +208,33 @@ nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
  1. ИНИЦИАЛИЗАЦИЯ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 =========================================================
 */
+// Глобальный перехват ошибок с самого начала, чтобы ни один сбой не приводил к вечной загрузке
+window.addEventListener('error', function(e) {
+  console.error('Global error:', e.error || e.message);
+  var app = document.getElementById('app');
+  if (app && (!app.innerHTML || app.innerHTML.indexOf('spinner') !== -1)) {
+    app.innerHTML = '<div style="padding:40px 16px;text-align:center"><h2>Ошибка запуска</h2><p class="mu" style="margin:12px 0">' + (e.message || 'Ошибка выполнения скрипта') + '</p><button class="pb big" onclick="location.reload()">Повторить</button></div>';
+  }
+});
+window.addEventListener('unhandledrejection', function(e) {
+  console.error('Unhandled rejection:', e.reason);
+  var msg = (e && e.reason && (e.reason.message || String(e.reason))) || 'Ошибка запроса';
+  var app = document.getElementById('app');
+  if (app && (!app.innerHTML || app.innerHTML.indexOf('spinner') !== -1)) {
+    app.innerHTML = '<div style="padding:40px 16px;text-align:center"><h2>Ошибка подключения</h2><p class="mu" style="margin:12px 0">' + msg + '</p><button class="pb big" onclick="location.reload()">Повторить</button></div>';
+  }
+});
+
 const tg = window.Telegram && Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
+
+if (typeof supabase === 'undefined') {
+  var app = document.getElementById('app');
+  if (app) {
+    app.innerHTML = '<div style="padding:40px 16px;text-align:center"><h2>Ошибка сети</h2><p class="mu" style="margin:12px 0">Не удалось загрузить библиотеку Supabase. Проверьте интернет-соединение.</p><button class="pb big" onclick="location.reload()">Повторить</button></div>';
+  }
+  throw new Error('Supabase client library not loaded');
+}
 
 const SUPABASE_URL = 'https://zejpqdzashqaudcxdpoh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5FcwXPo1yU6BzYhmmfVQcA_DNv9U7ku';
@@ -228,12 +253,7 @@ let BRANCH = null, BRANCHES = [], IS_ADMIN = false,   // текущий фили
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.11.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
-
-// Глобальный перехват ошибок. Стоит ДО остального кода, чтобы любая ошибка
-// при запуске показывалась на экране, а не молча останавливала приложение.
-addEventListener('error', e => toast(e.message, 'er'));
-addEventListener('unhandledrejection', e => toast(e.reason?.message || String(e.reason), 'er'));
+const APP_VERSION = '1.11.1'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 /* 
 =========================================================
@@ -306,6 +326,7 @@ async function load() {
     for (;;) {
       const { data, error } = await sb.from('products').select('*').eq('store_id', STORE).order('name').range(f, f + 999);
       if (error) throw error;
+      if (!data || !data.length) break;
       all = all.concat(data);
       if (data.length < 1000) break;
       f += 1000;
@@ -318,6 +339,7 @@ async function load() {
     for (;;) {
       const { data, error } = await sb.from('branch_stock').select('product_id,stock_quantity,cost_price').eq('branch_id', BRANCH).range(f, f + 999);
       if (error) throw error;
+      if (!data || !data.length) break;
       data.forEach(r => bs[r.product_id] = r);
       if (data.length < 1000) break;
       f += 1000;
@@ -326,15 +348,20 @@ async function load() {
   })();
 
   const pCats = (async () => {
-    const cr = await sb.from('categories').select('*').eq('store_id', STORE).order('sort_order').order('created_at');
-    if (cr.error) throw cr.error;
-    return cr.data;
+    try {
+      const cr = await sb.from('categories').select('*').eq('store_id', STORE).order('sort_order').order('created_at');
+      if (cr.error) { console.warn('categories error:', cr.error); return []; }
+      return cr.data || [];
+    } catch (e) {
+      console.warn('categories exception:', e);
+      return [];
+    }
   })();
 
   const [all, bs, cats] = await Promise.all([pProducts, pStock, pCats]);
-  CATS = cats;
+  CATS = cats || [];
   await loadECats();
-  P = all.map(p => ({ ...p, stock_quantity: bs[p.id] ? bs[p.id].stock_quantity : 0, cost_price: bs[p.id] ? +bs[p.id].cost_price : 0 }));
+  P = (all || []).map(p => ({ ...p, stock_quantity: bs[p.id] ? bs[p.id].stock_quantity : 0, cost_price: bs[p.id] ? +bs[p.id].cost_price : 0 }));
 }
 
 /* Выгрузка статистики за период */
@@ -346,13 +373,14 @@ async function stats(f, t, ids) {
     .eq('store_id', STORE).in('branch_id', ids).eq('deleted', false).gte('created_at', a).lte('created_at', b).order('created_at', { ascending: false }).limit(1000);
   if (error) throw error;
   
-  const o = { n: data.length, rev: 0, cost: 0, u: 0, by: {}, list: data };
-  data.forEach(s => {
-    o.rev += +s.total_amount; o.cost += +s.total_cogs;
+  const list = data || [];
+  const o = { n: list.length, rev: 0, cost: 0, u: 0, by: {}, list };
+  list.forEach(s => {
+    o.rev += +s.total_amount || 0; o.cost += +s.total_cogs || 0;
     (s.receipt_items || []).forEach(i => {
-      o.u += i.quantity;
+      o.u += i.quantity || 0;
       const x = o.by[i.product_id] || (o.by[i.product_id] = { u: 0, rev: 0 });
-      x.u += i.quantity; x.rev += i.quantity * i.price_at_sale;
+      x.u += i.quantity || 0; x.rev += (i.quantity || 0) * (i.price_at_sale || 0);
     });
   });
   o.rev = r2(o.rev); o.cost = r2(o.cost); o.gp = r2(o.rev - o.cost);
@@ -541,22 +569,37 @@ const fmtDate = d => String(d).split('-').reverse().join('.');
 const selSt = 'width:100%;min-height:48px;border-radius:12px;border:1px solid var(--br);background:var(--cd);color:var(--tx);padding:0 12px;font:inherit';
 let ECATS = [], EXP_OK = true, EXPC = {};
 async function loadECats() {
-  const { data, error } = await sb.from('expense_categories').select('*').eq('store_id', STORE).order('sort_order').order('created_at');
-  if (error) { EXP_OK = false; ECATS = []; return; }   // миграция расходов ещё не применена — остальное приложение работает
-  EXP_OK = true; ECATS = data;
+  try {
+    const { data, error } = await sb.from('expense_categories').select('*').eq('store_id', STORE).order('sort_order').order('created_at');
+    if (error) { EXP_OK = false; ECATS = []; return; }   // миграция расходов ещё не применена — остальное приложение работает
+    EXP_OK = true; ECATS = data || [];
+  } catch (e) {
+    console.warn('loadECats error:', e);
+    EXP_OK = false; ECATS = [];
+  }
 }
 const ecatName = id => (ECATS.find(c => c.id === id) || {}).name || '—';
 async function expList(f, t, ids, cat) {
-  let all = [], from = 0;
-  for (;;) {
-    let q = sb.from('expenses').select('id,branch_id,category_id,amount,spent_on,note,created_at').eq('store_id', STORE).in('branch_id', ids).eq('deleted', false)
-      .gte('spent_on', f).lte('spent_on', t).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).range(from, from + 999);
-    if (cat) q = q.eq('category_id', cat);
-    const { data, error } = await q; if (error) throw error;
-    all = all.concat(data); if (data.length < 1000) break; from += 1000;
+  try {
+    let all = [], from = 0;
+    for (;;) {
+      let q = sb.from('expenses').select('id,branch_id,category_id,amount,spent_on,note,created_at').eq('store_id', STORE).in('branch_id', ids).eq('deleted', false)
+        .gte('spent_on', f).lte('spent_on', t).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).range(from, from + 999);
+      if (cat) q = q.eq('category_id', cat);
+      const { data, error } = await q;
+      if (error) { console.warn('expList query error:', error); EXP_OK = false; return noExp; }
+      if (!data || !data.length) break;
+      all = all.concat(data);
+      if (data.length < 1000) break;
+      from += 1000;
+    }
+    const by = {}; let sum = 0;
+    all.forEach(e => { if (e && e.amount) { sum += +e.amount; by[e.category_id] = (by[e.category_id] || 0) + +e.amount; } });
+    return { list: all, sum: r2(sum), by };
+  } catch (e) {
+    console.warn('expList error:', e);
+    return noExp;
   }
-  const by = {}; let sum = 0; all.forEach(e => { sum += +e.amount; by[e.category_id] = (by[e.category_id] || 0) + +e.amount; });
-  return { list: all, sum: r2(sum), by };
 }
 const noExp = { list: [], sum: 0, by: {} };
 // Выручка − себестоимость продаж = валовая прибыль; валовая прибыль − операционные расходы = прибыль после расходов.
@@ -656,7 +699,17 @@ function ecatSeed() {
 const V = {
   async home() {
     const f = S.hp === 'month' ? monthStart() : today();
-    const [a, ex] = await Promise.all([stats(f, today()), EXP_OK ? expList(f, today(), [BRANCH], null) : Promise.resolve(noExp)]);
+    let a = { n: 0, rev: 0, cost: 0, u: 0, gp: 0 }, ex = noExp;
+    try {
+      const [resStats, resExp] = await Promise.all([
+        stats(f, today()).catch(err => { console.warn('stats error:', err); return { n: 0, rev: 0, cost: 0, u: 0, gp: 0, by: {}, list: [] }; }),
+        EXP_OK ? expList(f, today(), [BRANCH], null).catch(err => { console.warn('expList error:', err); return noExp; }) : Promise.resolve(noExp)
+      ]);
+      if (resStats) a = resStats;
+      if (resExp) ex = resExp;
+    } catch (err) {
+      console.warn('V.home stats/exp error:', err);
+    }
     const r = pl(a, ex), low = P.filter(p => p.stock_quantity <= LOW);
     return `<h1>${esc(STORE_NAME)}</h1>${switchers()}<div class="owner-only"><div class="chips"><button class="${S.hp === 'month' ? '' : 'on'}" onclick="S.hp='day';render()">Сегодня</button><button class="${S.hp === 'month' ? 'on' : ''}" onclick="S.hp='month';render()">Месяц</button></div>
     <div class="g"><div class="c w"><small>Выручка · ${a.n} продаж</small><b>${fmt(r.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(r.gp)}</b></div><div class="c"><small>Расходы</small><b>${fmt(r.exp)}</b></div><div class="c w"><small>Прибыль после расходов</small><b style="color:${netClr(r.net)}">${fmt(r.net)}</b></div></div></div>
@@ -714,8 +767,18 @@ const V = {
   },
   async rep() {
     const ids = RB();
-    const [a, ex] = await Promise.all([stats(S.from, S.to, ids), EXP_OK ? expList(S.from, S.to, ids, null) : Promise.resolve(noExp)]);
-    const f = pl(a, ex), cats = Object.entries(ex.by).sort((x, y) => y[1] - x[1]);
+    let a = { n: 0, rev: 0, cost: 0, u: 0, gp: 0, by: {}, list: [] }, ex = noExp;
+    try {
+      const [resStats, resExp] = await Promise.all([
+        stats(S.from, S.to, ids).catch(err => { console.warn('rep stats error:', err); return a; }),
+        EXP_OK ? expList(S.from, S.to, ids, null).catch(err => { console.warn('rep expList error:', err); return noExp; }) : Promise.resolve(noExp)
+      ]);
+      if (resStats) a = resStats;
+      if (resExp) ex = resExp;
+    } catch (err) {
+      console.warn('rep error:', err);
+    }
+    const f = pl(a, ex), cats = Object.entries((ex && ex.by) || {}).sort((x, y) => y[1] - x[1]);
     return `<h1>Отчёты</h1>${rbSel()}${periodBar('from', 'to')}
     <div class="g" style="margin-top:10px">
       <div class="c w"><small>Выручка</small><b>${fmt(f.rev)}</b></div>
@@ -1113,7 +1176,11 @@ function invOk() {
 */
 /* Вход в функцию auth-store. Админ платформы без store_id получает список магазинов, с store_id — токен на выбранный магазин */
 async function authCall(storeId) {
-  const { data, error } = await sb0.functions.invoke('auth-store', { body: { initData: tg.initData, store_id: storeId || undefined } });
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Превышено время ожидания ответа сервера (15 сек). Пожалуйста, повторите попытку.')), 15000)
+  );
+  const invokePromise = sb0.functions.invoke('auth-store', { body: { initData: (tg && tg.initData) || '', store_id: storeId || undefined } });
+  const { data, error } = await Promise.race([invokePromise, timeoutPromise]);
   if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (e) {} throw new Error(m); }
   if (!data) throw new Error('Пустой ответ сервера');
   if (data.error) throw new Error(data.error);
@@ -1148,7 +1215,18 @@ async function enterBranch(b) {
   BRANCH = b.id; try { localStorage.setItem('branch_' + STORE, b.id); } catch (e) {}
   S.rb = null; S.docs = {}; S.cart = []; S.pcart = []; S.inv = {}; S.win = null; S.tab = 'home'; S.bsq = '';
   showLoading('Подгружаем товары…', b.name || '');
-  try { await load(); await render(); } catch (e) { toast(e.message || String(e), 'er'); }
+  try {
+    await load();
+    await render();
+  } catch (e) {
+    console.error('Ошибка входа в филиал:', e);
+    $('#nav').style.display = 'none';
+    $('#app').innerHTML = `<h1>Ошибка загрузки</h1>
+      <p class="mu">${esc(e.message || String(e))}</p>
+      <button class="pb big" onclick="enterBranch(BRANCHES.find(x => x.id === '${b.id}') || BRANCHES[0])">Повторить</button>
+      ${IS_ADMIN ? '<button class="big" style="margin-top:8px" onclick="chooseStore()">Сменить магазин</button>' : ''}`;
+    toast(e.message || String(e), 'er');
+  }
 }
 async function chooseStore() {
   showLoading('Загружаем список магазинов…');
@@ -1157,9 +1235,22 @@ async function chooseStore() {
     showPicker('Выберите магазин', d.stores.map(s => ({ id: s.id, name: s.name, sub: s.sub_status === 'inactive' ? 'подписка неактивна' : '' })),
       async s => {
         showLoading('Подгружаем товары…', s.name);
-        try { await enterStore(await authCall(s.id)); } catch (e) { toast(e.message, 'er'); }
+        try {
+          await enterStore(await authCall(s.id));
+        } catch (e) {
+          console.error('Ошибка выбора магазина:', e);
+          $('#nav').style.display = 'none';
+          $('#app').innerHTML = `<h1>Ошибка входа</h1>
+            <p class="mu">${esc(e.message || String(e))}</p>
+            <button class="pb big" onclick="chooseStore()">Выбрать другой магазин</button>`;
+          toast(e.message || String(e), 'er');
+        }
       });
-  } catch (e) { toast(e.message, 'er'); }
+  } catch (e) {
+    $('#nav').style.display = 'none';
+    $('#app').innerHTML = `<h1>Ошибка</h1><p class="mu">${esc(e.message || String(e))}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
+    toast(e.message, 'er');
+  }
 }
 function chooseBranch() { showPicker('Выберите филиал', BRANCHES, enterBranch, '<button class="big" onclick="render()">Отмена</button>'); }
 
@@ -1194,7 +1285,17 @@ async function chooseStoreFrom(d) {
   showPicker('Выберите магазин', d.stores.map(s => ({ id: s.id, name: s.name, sub: s.sub_status === 'inactive' ? 'подписка неактивна' : '' })),
     async s => {
       showLoading('Подгружаем товары…', s.name);
-      try { await enterStore(await authCall(s.id)); warmScanner(); } catch (e) { toast(e.message, 'er'); }
+      try {
+        await enterStore(await authCall(s.id));
+        warmScanner();
+      } catch (e) {
+        console.error('Ошибка входа в магазин:', e);
+        $('#nav').style.display = 'none';
+        $('#app').innerHTML = `<h1>Ошибка входа</h1>
+          <p class="mu">${esc(e.message || String(e))}</p>
+          <button class="pb big" onclick="chooseStore()">Выбрать другой магазин</button>`;
+        toast(e.message || String(e), 'er');
+      }
     });
 }
 
