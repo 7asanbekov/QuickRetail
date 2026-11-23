@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Магазин</title>
 <style>
 /* 
@@ -72,11 +72,15 @@ nav button{flex:1;border:0;border-radius:0;background:none;font-size:11px;displa
 nav button span{font-size:20px}nav button.on{color:var(--pr);font-weight:700}
 
 /* Затемнение (оверлей) и контейнер модального окна (BottomSheet) */
-.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:9}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:9;transition:bottom .2s ease}
 .ov[hidden]{display:none}
 .sh{background:var(--bg);width:100%;max-width:640px;max-height:90%;overflow:auto;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px))}
-.sh.tall{height:92vh;max-height:94vh;display:flex;flex-direction:column}
-.sh-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:2px}
+.sh.tall{height:92vh;height:92dvh;max-height:94vh;max-height:94dvh;display:flex;flex-direction:column}
+.sh-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:2px;padding-bottom:120px}
+.sh.kbd-open #pp img{max-height:64px!important;transition:max-height .2s ease}
+.sh.kbd-open #pp div{padding:8px 0!important;font-size:18px!important}
+.sh.kbd-open #pdel{display:none}
+.sh-footer{margin-top:8px;padding-top:8px;border-top:1px solid var(--br);flex:none;background:var(--bg)}
 
 /* Всплывающие уведомления (Toast) сверху */
 #toast{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;padding:12px 14px;border-radius:12px;display:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)}
@@ -253,7 +257,7 @@ let BRANCH = null, BRANCHES = [], IS_ADMIN = false,   // текущий фили
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.11.1'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
+const APP_VERSION = '1.11.2'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 /* 
 =========================================================
@@ -309,9 +313,72 @@ async function run(fn) {
 }
 
 /* Управление модальными окнами */
-function modal(h, tall) { $('#mb').className = 'sh' + (tall ? ' tall' : ''); $('#mb').innerHTML = h; $('#md').hidden = false; }
-function closeModal() { $('#md').hidden = true; $('#mb').className = 'sh'; }
+function modal(h, tall) {
+  const mb = $('#mb'), md = $('#md');
+  mb.className = 'sh' + (tall ? ' tall' : '');
+  mb.innerHTML = h;
+  md.hidden = false;
+  adjustModalViewport();
+}
+function closeModal() {
+  const mb = $('#mb'), md = $('#md');
+  md.hidden = true;
+  mb.className = 'sh';
+  mb.style.height = '';
+  mb.style.maxHeight = '';
+  md.style.bottom = '';
+  mb.classList.remove('kbd-open');
+}
 function ask(t, y) { ASK = y; modal(`<h2>${esc(t)}</h2><div class="row"><button onclick="closeModal()">Нет</button><button class="pb" onclick="closeModal();ASK()">Да</button></div>`); }
+
+function adjustModalViewport() {
+  const md = document.getElementById('md');
+  const mb = document.getElementById('mb');
+  if (!md || md.hidden || !mb || !mb.classList.contains('tall')) return;
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const isKbd = vv.height < window.innerHeight * 0.85;
+    const h = Math.round(vv.height);
+    mb.style.height = (h - 10) + 'px';
+    mb.style.maxHeight = (h - 10) + 'px';
+    const bottomOffset = Math.max(0, Math.round(window.innerHeight - (vv.offsetTop + vv.height)));
+    md.style.bottom = bottomOffset + 'px';
+    mb.classList.toggle('kbd-open', isKbd);
+  }
+}
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', adjustModalViewport);
+  window.visualViewport.addEventListener('scroll', adjustModalViewport);
+}
+
+// Автоскролл строки в центр видимой зоны при нажатии на поле ввода
+document.addEventListener('focusin', function(e) {
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) {
+    const mb = t.closest('#mb');
+    if (mb) {
+      mb.classList.add('kbd-open');
+      adjustModalViewport();
+      setTimeout(function() {
+        if (document.activeElement === t) {
+          t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      }, 320);
+    }
+  }
+});
+
+document.addEventListener('focusout', function() {
+  setTimeout(function() {
+    const a = document.activeElement;
+    if (!a || (a.tagName !== 'INPUT' && a.tagName !== 'SELECT' && a.tagName !== 'TEXTAREA')) {
+      const mb = document.getElementById('mb');
+      if (mb) mb.classList.remove('kbd-open');
+      adjustModalViewport();
+    }
+  }, 150);
+});
 
 /* 
 =========================================================
@@ -1036,7 +1103,7 @@ function pform(p, cb) {
     <label>Цена продажи, сом<input id="fp" inputmode="decimal" value="${p.retail_price || ''}"></label>
     ${e ? `<small style="display:block;margin-bottom:6px">Остаток: ${p.stock_quantity} шт (меняется закупкой и сверкой остатков)</small>` : ''}
   </div>
-  <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--br);flex:none">
+  <div class="row sh-footer">
     <button onclick="closeModal()">Отмена</button>
     <button class="pb" onclick="psave('${p.id || ''}')">Сохранить</button>
   </div>`, true);
