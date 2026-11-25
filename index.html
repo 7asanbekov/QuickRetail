@@ -255,7 +255,7 @@ let BRANCH = null, BRANCHES = [], IS_ADMIN = false,   // текущий фили
     T = null,           // Временные данные для модальных окон
     tmr;                // Таймер скрытия toast-уведомлений
 const LOW = 2;          // Порог предупреждения о низком остатке товара
-const APP_VERSION = '1.11.3'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
+const APP_VERSION = '1.12.0'; // Меняйте при каждой загрузке файла: видно внизу главной, помогает понять, не показывается ли старая версия из кэша
 
 /* 
 =========================================================
@@ -286,6 +286,7 @@ const S = {
   sq: '', cat: null, sub: null, lim: 30,   // Поиск, выбранная категория/подкатегория, сколько товаров показано
   bsq: '', blim: 30,                       // Поиск в окне закупки (живой поиск как в продаже)
   hp: 'day',            // Главная: период показателей ('day' | 'month')
+  lowAll: false,        // Главная: показать весь список заканчивающихся товаров
   ef: monthStart(), et: today(), ecat: '', elim: 50,   // Расходы: период, категория, сколько записей показано
   from: today(),        // Начальная дата для отчетов
   to: today()           // Конечная дата для отчетов 
@@ -311,17 +312,27 @@ async function run(fn) {
 }
 
 /* Управление модальными окнами */
+function syncBackBtn() {
+  try {
+    if (tg && tg.BackButton) {
+      const hasModal = $('#md') && !$('#md').hidden;
+      (hasModal || S.win) ? tg.BackButton.show() : tg.BackButton.hide();
+    }
+  } catch (e) {}
+}
 function modal(h) {
   const mb = $('#mb'), md = $('#md');
   mb.className = 'sh';
   mb.innerHTML = h;
   md.hidden = false;
+  syncBackBtn();
 }
 function closeModal() {
   const mb = $('#mb'), md = $('#md');
   md.hidden = true;
   mb.className = 'sh';
   mb.innerHTML = '';
+  syncBackBtn();
 }
 function ask(t, y) { ASK = y; modal(`<h2>${esc(t)}</h2><div class="row"><button onclick="closeModal()">Нет</button><button class="pb" onclick="closeModal();ASK()">Да</button></div>`); }
 
@@ -376,16 +387,23 @@ async function load() {
   P = (all || []).map(p => ({ ...p, stock_quantity: bs[p.id] ? bs[p.id].stock_quantity : 0, cost_price: bs[p.id] ? +bs[p.id].cost_price : 0 }));
 }
 
-/* Выгрузка статистики за период */
+/* Выгрузка статистики за период (с постраничной загрузкой без лимита в 1000 чеков) */
 async function stats(f, t, ids) {
   ids = ids || [BRANCH];
   const a = new Date(f + 'T00:00:00').toISOString(), b = new Date(t + 'T23:59:59.999').toISOString();
-  const { data, error } = await sb.from('receipts')
-    .select('id,total_amount,total_cogs,created_at,receipt_items(product_id,quantity,price_at_sale)')
-    .eq('store_id', STORE).in('branch_id', ids).eq('deleted', false).gte('created_at', a).lte('created_at', b).order('created_at', { ascending: false }).limit(1000);
-  if (error) throw error;
-  
-  const list = data || [];
+  let list = [], from = 0;
+  for (;;) {
+    const { data, error } = await sb.from('receipts')
+      .select('id,total_amount,total_cogs,created_at,receipt_items(product_id,quantity,price_at_sale)')
+      .eq('store_id', STORE).in('branch_id', ids).eq('deleted', false).gte('created_at', a).lte('created_at', b)
+      .order('created_at', { ascending: false }).range(from, from + 999);
+    if (error) throw error;
+    if (!data || !data.length) break;
+    list = list.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+
   const o = { n: list.length, rev: 0, cost: 0, u: 0, by: {}, list };
   list.forEach(s => {
     o.rev += +s.total_amount || 0; o.cost += +s.total_cogs || 0;
@@ -428,7 +446,7 @@ const WN = { ecats: ['', '', 'Категории расходов'], cats: ['', 
 const newBtn = (w, n) => `<button class="pb big" style="margin:0 0 8px" onclick="openWin('${w}')">${n ? WN[w][1] + ' (' + n + ')' : WN[w][0]}</button>`;
 function openWin(w) { if (w === 'sale') { S.cartView = false; S.sq = ''; S.cat = null; S.sub = null; S.lim = 30; } if (w === 'buy') { S.bsq = ''; S.blim = 30; } S.win = w; render(); const e = $('#win'); if (e) e.scrollTop = 0; }
 function closeWin() { S.sq = ''; S.bsq = ''; S.win = null; render(); }
-if (tg && tg.BackButton) tg.BackButton.onClick(() => { if (S.win) closeWin(); });
+if (tg && tg.BackButton) tg.BackButton.onClick(() => { const md = $('#md'); if (md && !md.hidden) closeModal(); else if (S.win) closeWin(); });
 
 /* ===== Категории и каталог ===== */
 let CATS = [];
@@ -466,7 +484,15 @@ function catalogBody() {
     + prodList(list);
 }
 function catRefresh() { const b = $('#sbody'); if (b) b.innerHTML = catalogBody(); }
-function qs(v) { S.sq = v; S.lim = 30; catRefresh(); }               // поиск по мере ввода (без перерисовки окна)
+function qs(v) {
+  S.sq = v; S.lim = 30;
+  if (S.cartView && v.trim()) {
+    S.cartView = false;
+    render().then(() => { const e = $('#sq'); if (e) { e.focus(); try { e.setSelectionRange(v.length, v.length); } catch (_) {} } });
+    return;
+  }
+  catRefresh();
+}               // поиск по мере ввода (без перерисовки окна)
 function selCat(id) { S.cat = id; S.sub = null; S.lim = 30; catRefresh(); const w = $('#win'); if (w) w.scrollTop = 0; }
 function selSub(id) { S.sub = id; S.lim = 30; catRefresh(); }
 
@@ -591,12 +617,13 @@ async function loadECats() {
   }
 }
 const ecatName = id => (ECATS.find(c => c.id === id) || {}).name || '—';
-async function expList(f, t, ids, cat) {
+async function expList(f, t, ids, cat, withDeleted) {
   try {
     let all = [], from = 0;
     for (;;) {
-      let q = sb.from('expenses').select('id,branch_id,category_id,amount,spent_on,note,created_at').eq('store_id', STORE).in('branch_id', ids).eq('deleted', false)
+      let q = sb.from('expenses').select('id,branch_id,category_id,amount,spent_on,note,deleted,created_at').eq('store_id', STORE).in('branch_id', ids)
         .gte('spent_on', f).lte('spent_on', t).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).range(from, from + 999);
+      if (!withDeleted) q = q.eq('deleted', false);
       if (cat) q = q.eq('category_id', cat);
       const { data, error } = await q;
       if (error) { console.warn('expList query error:', error); EXP_OK = false; return noExp; }
@@ -605,15 +632,15 @@ async function expList(f, t, ids, cat) {
       if (data.length < 1000) break;
       from += 1000;
     }
-    const by = {}; let sum = 0;
-    all.forEach(e => { if (e && e.amount) { sum += +e.amount; by[e.category_id] = (by[e.category_id] || 0) + +e.amount; } });
-    return { list: all, sum: r2(sum), by };
+    const by = {}; let sum = 0, cnt = 0;
+    all.forEach(e => { if (e && !e.deleted && e.amount) { cnt++; sum += +e.amount; by[e.category_id] = (by[e.category_id] || 0) + +e.amount; } });
+    return { list: all, sum: r2(sum), by, cnt };
   } catch (e) {
     console.warn('expList error:', e);
     return noExp;
   }
 }
-const noExp = { list: [], sum: 0, by: {} };
+const noExp = { list: [], sum: 0, by: {}, cnt: 0 };
 // Выручка − себестоимость продаж = валовая прибыль; валовая прибыль − операционные расходы = прибыль после расходов.
 // Закупки товара в расходы НЕ входят: себестоимость уже учтена при продаже.
 const pl = (a, ex) => ({ rev: a.rev, cost: a.cost, gp: a.gp, exp: ex.sum, net: r2(a.gp - ex.sum) });
@@ -628,6 +655,16 @@ function setPeriod(fk, tk, f) { S[fk] = f; S[tk] = today(); S.elim = 50; render(
 function expEdit(id) {
   if (!ECATS.length) return toast('Сначала добавьте категории расходов', 'er');
   const e = id ? EXPC[id] : null; T = { id, cat: e ? e.category_id : ECATS[0].id };
+  if (e && e.deleted) {
+    return modal(`<h2>Расход</h2><small>${fmtDate(e.spent_on)} · помечен на удаление</small>
+    <div class="c">
+      <div class="bar"><span>Категория</span><b>${esc(ecatName(e.category_id))}</b></div>
+      <div class="bar"><span>Сумма</span><b>${fmt(e.amount)}</b></div>
+      ${e.note ? `<div class="bar"><span>Комментарий</span><span>${esc(e.note)}</span></div>` : ''}
+    </div>
+    <div class="row"><button class="gr" onclick="expMark('${e.id}',false)">Снять пометку</button></div>
+    <button class="big" onclick="closeModal()">Закрыть</button>`);
+  }
   modal(`<h2>${e ? 'Расход' : 'Новый расход'}</h2>
   <label>Сумма, сом<input id="xa" inputmode="decimal" value="${e ? e.amount : ''}"></label>
   <label>Дата<input id="xd" type="date" value="${e ? e.spent_on : today()}"></label>
@@ -635,8 +672,7 @@ function expEdit(id) {
   <input id="xcn" placeholder="Название новой категории" style="display:none;margin-bottom:10px">
   <label>Комментарий<input id="xn" value="${esc(e ? e.note || '' : '')}"></label>
   ${!e && BRANCHES.length > 1 ? `<label>Филиал<select id="xb" style="${selSt};margin-top:4px">${BRANCHES.map(b => `<option value="${b.id}" ${b.id === BRANCH ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>` : ''}
-  <div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="expSave()">Сохранить</button></div>
-  ${e ? `<button class="big" style="background:var(--er);color:#fff;border-color:var(--er)" onclick="ask('Удалить расход?',()=>expDel())">Удалить</button>` : ''}`);
+  ${e ? `<div class="row"><button class="gr" onclick="expSave()">Исправить</button><button class="rd" onclick="ask('Пометить расход на удаление?',()=>expMark('${e.id}',true))">Пометить на удаление</button></div><button class="big" onclick="closeModal()">Закрыть</button>` : `<div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="expSave()">Сохранить</button></div>`}`);
 }
 function expSave() {
   const tid = T.id;
@@ -648,12 +684,11 @@ function expSave() {
     if (cat === '__new') { const nn = $('#xcn').value.trim(); if (!nn) throw new Error('Введите название категории'); cat = await createECat(nn); }
     if (tid) { const { error } = await sb.from('expenses').update({ category_id: cat, amount: r2(amount), spent_on: spent, note: note || null }).eq('id', tid); if (error) throw error; }
     else { const br = $('#xb') ? $('#xb').value : BRANCH; const { error } = await sb.from('expenses').insert({ store_id: STORE, branch_id: br, category_id: cat, amount: r2(amount), spent_on: spent, note: note || null }); if (error) throw error; }
-    closeModal(); toast('Расход сохранён', 'ok');
+    closeModal(); toast(tid ? 'Расход исправлен' : 'Расход сохранён', 'ok');
   });
 }
-function expDel() {
-  const tid = T.id;
-  run(async () => { const { error } = await sb.from('expenses').update({ deleted: true }).eq('id', tid); if (error) throw error; toast('Расход удалён', 'ok'); });
+function expMark(tid, del) {
+  run(async () => { const { error } = await sb.from('expenses').update({ deleted: del }).eq('id', tid); if (error) throw error; closeModal(); toast(del ? 'Помечен на удаление' : 'Пометка снята', 'ok'); });
 }
 async function createECat(name) {
   const { data, error } = await sb.from('expense_categories').insert({ store_id: STORE, name, sort_order: ECATS.length ? Math.max(...ECATS.map(c => c.sort_order)) + 1 : 0 }).select().single();
@@ -684,13 +719,18 @@ function ecatMove(id, d) {
 }
 async function ecatDel(id) {
   const c = ECATS.find(x => x.id === id);
-  const { count, error } = await sb.from('expenses').select('id', { count: 'exact', head: true }).eq('category_id', id);
+  const { count, error } = await sb.from('expenses').select('id', { count: 'exact', head: true }).eq('category_id', id).eq('deleted', false);
   if (error) return toast(error.message, 'er');
   if (!count) return ask(`Удалить «${c.name}»?`, () => ecatRemove(id));
   T = { id };
   modal(`<h2>В «${esc(c.name)}» есть расходы (${count})</h2><label>Перенести их в<select id="emv" style="${selSt};margin-top:4px">${ECATS.filter(x => x.id !== id).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label><div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="ecatMoveDel()">Перенести и удалить</button></div>`);
 }
-async function ecatRemoveNow(id) { const { error } = await sb.from('expense_categories').delete().eq('id', id); if (error) throw new Error(/foreign key/i.test(error.message) ? 'В категории остались расходы' : error.message); await loadECats(); }
+async function ecatRemoveNow(id) {
+  await sb.from('expenses').delete().eq('category_id', id).eq('deleted', true);
+  const { error } = await sb.from('expense_categories').delete().eq('id', id);
+  if (error) throw new Error(/foreign key/i.test(error.message) ? 'В категории остались расходы' : error.message);
+  await loadECats();
+}
 function ecatRemove(id) { run(() => ecatRemoveNow(id)); }
 function ecatMoveDel() {
   const tid = T.id;
@@ -723,9 +763,10 @@ const V = {
       console.warn('V.home stats/exp error:', err);
     }
     const r = pl(a, ex), low = P.filter(p => p.stock_quantity <= LOW);
+    const lowList = S.lowAll ? low : low.slice(0, 30);
     return `<h1>${esc(STORE_NAME)}</h1>${switchers()}<div class="owner-only"><div class="chips"><button class="${S.hp === 'month' ? '' : 'on'}" onclick="S.hp='day';render()">Сегодня</button><button class="${S.hp === 'month' ? 'on' : ''}" onclick="S.hp='month';render()">Месяц</button></div>
     <div class="g"><div class="c w"><small>Выручка · ${a.n} продаж</small><b>${fmt(r.rev)}</b></div><div class="c"><small>Валовая прибыль</small><b>${fmt(r.gp)}</b></div><div class="c"><small>Расходы</small><b>${fmt(r.exp)}</b></div><div class="c w"><small>Прибыль после расходов</small><b style="color:${netClr(r.net)}">${fmt(r.net)}</b></div></div></div>
-    <h2>Заканчивается</h2>${low.map(row).join('') || '<p class="mu">Всё в наличии</p>'}<p class="mu" style="text-align:center"><small>Версия ${APP_VERSION}</small></p>`;
+    <h2>Заканчивается${low.length ? ' (' + low.length + ')' : ''}</h2>${lowList.map(row).join('') || '<p class="mu">Всё в наличии</p>'}${low.length > 30 ? `<button class="big" onclick="S.lowAll=!S.lowAll;render()">${S.lowAll ? 'Свернуть' : 'Показать все (' + low.length + ')'}</button>` : ''}<p class="mu" style="text-align:center"><small>Версия ${APP_VERSION}</small></p>`;
   },
 
   prod() { 
@@ -751,7 +792,8 @@ const V = {
   invForm() {
     const it = Object.entries(S.inv);
     return scanbar('inv') + it.map(([id, x]) => {
-      const p = G(id), d = x.cnt - p.stock_quantity;
+      const p = G(id); if (!p) return '';
+      const d = x.cnt - p.stock_quantity;
       return `<div class="c"><div class="r"><div class="f"><b>${esc(nm(p))}</b><small>по учёту ${p.stock_quantity} шт</small></div><b class="${d < 0 ? 'lo' : d > 0 ? 'wa' : 'ok'}">${d > 0 ? '+' : ''}${d}</b></div>
       <div class="r" style="margin-top:8px"><label style="flex:1;margin:0">Посчитано<input inputmode="numeric" value="${x.cnt}" onchange="setc('${id}',this.value)"></label>${p.stock_quantity <= 0 ? `<label style="flex:1;margin:0">Закупочная цена<input inputmode="decimal" value="${esc(x.cost)}" onchange="S.inv['${id}'].cost=this.value.replace(',','.')"></label>` : ''}<button class="x" aria-label="Убрать" onclick="delete S.inv['${id}'];render()">✕</button></div></div>`;
     }).join('') + (it.length ? `<button class="pb big" onclick="ask('Применить сверку остатков? Остатки изменятся.',invOk)">Подтвердить сверку</button>` : '');
@@ -763,13 +805,13 @@ const V = {
   async exp() {
     if (!EXP_OK) return `<h1>Расходы</h1><p class="mu">Раздел не подключён: примените миграцию базы данных для расходов.</p>`;
     if (!ECATS.length) return `<h1>Расходы</h1><button class="pb big" onclick="ecatSeed()">Добавить стандартные категории</button><button class="big" onclick="openWin('ecats')">Создать свои категории</button>`;
-    const ex = await expList(S.ef, S.et, RB(), S.ecat || null);
+    const ex = await expList(S.ef, S.et, RB(), S.ecat || null, true);
     EXPC = {}; ex.list.forEach(e => EXPC[e.id] = e);
     return `<h1>Расходы</h1>${rbSel()}${periodBar('ef', 'et')}
     <label style="margin:8px 0"><select onchange="S.ecat=this.value;S.elim=50;render()" style="${selSt}"><option value="">Все категории</option>${ECATS.map(c => `<option value="${c.id}" ${S.ecat === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
-    <div class="c"><small>Расходы за период</small><b style="display:block;font-size:24px">${fmt(ex.sum)}</b><small>записей: ${ex.list.length}</small></div>
+    <div class="c"><small>Расходы за период</small><b style="display:block;font-size:24px">${fmt(ex.sum)}</b><small>записей: ${ex.cnt}</small></div>
     <button class="pb big" style="margin-top:0" onclick="expEdit(null)">＋ Добавить расход</button>`
-      + ex.list.slice(0, S.elim).map(e => `<div class="c r" onclick="expEdit('${e.id}')" style="cursor:pointer"><div class="f"><b>${esc(ecatName(e.category_id))}</b><small>${fmtDate(e.spent_on)}${e.note ? ' · ' + esc(e.note) : ''}</small></div><b>${fmt(e.amount)}</b></div>`).join('')
+      + ex.list.slice(0, S.elim).map(e => `<div class="c r" onclick="expEdit('${e.id}')" style="cursor:pointer${e.deleted ? ';opacity:.55' : ''}"><div class="f"><b>${esc(ecatName(e.category_id))}</b><small>${fmtDate(e.spent_on)}${e.note ? ' · ' + esc(e.note) : ''}</small></div><b class="${e.deleted ? 'lo' : ''}">${e.deleted ? 'помечен на удаление' : fmt(e.amount)}</b></div>`).join('')
       + (ex.list.length > S.elim ? `<button class="big" onclick="S.elim+=50;render()">Показать ещё (${ex.list.length - S.elim})</button>` : '');
   },
   more() {
@@ -818,7 +860,7 @@ async function render() {
     w.innerHTML = `<div class="wi"><div class="wh"><button onclick="closeWin()">← Назад</button><b>${WN[S.win][2]}</b></div>` + V[S.win + 'Form']() + '</div>';
     w.hidden = false;
   } else { w.hidden = true; w.innerHTML = ''; }
-  try { if (tg && tg.BackButton) S.win ? tg.BackButton.show() : tg.BackButton.hide(); } catch (e) {}
+  syncBackBtn();
   if (t === 'prod') plist();
 }
 
@@ -903,7 +945,10 @@ function look(m) {
   const e = $('#sq'), v = e.value;
   if (m === 'sale' || m === 'buy') {
     const l = find(v);
-    if (l.length > 1 && !l.every(p => p.barcode === v.trim())) return;
+    if (l.length > 1 && !l.every(p => p.barcode === v.trim())) {
+      if (m === 'sale' && S.cartView) { S.cartView = false; S.sq = v; render(); }
+      return;
+    }
     if (m === 'sale') S.sq = '';
     if (m === 'buy') S.bsq = '';
   }
@@ -1059,6 +1104,7 @@ function delPhoto(e) {
   if (!T) return;
   T.photo = null;
   T.photoBlob = null;
+  T.photoPromise = null;
   T.photoDeleted = true;
   $('#pp').innerHTML = `<div style="padding:24px 0;color:var(--mu);font-size:28px">📷<br><small style="font-size:13px">Добавить фото</small></div>`;
   const pd = $('#pdel'); if (pd) pd.innerHTML = '';
@@ -1069,25 +1115,28 @@ function photo(inp) {
   const f = inp.files[0]; if (!f) return;
   if (!/^image\//.test(f.type) || f.size > 20e6) return toast('Нужна картинка до 20 МБ', 'er');
   const im = new Image(), u = URL.createObjectURL(f);
-  im.onload = () => {
-    const maxSide = 600;
-    const k = Math.min(1, maxSide / Math.max(im.width, im.height)), c = document.createElement('canvas');
-    c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
-    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-    URL.revokeObjectURL(u);
-    const dataUrl = c.toDataURL('image/jpeg', 0.8);
-    T.photoDataUrl = dataUrl;
-    T.photo = dataUrl;
-    T.photoDeleted = false;
-    $('#pp').innerHTML = `<img src="${dataUrl}" style="width:100%;max-height:140px;object-fit:contain;display:block;margin:0 auto" alt="">`;
-    const pd = $('#pdel'); if (pd) pd.innerHTML = '<button type="button" class="sm" style="color:var(--er);background:transparent;border:none;cursor:pointer" onclick="delPhoto(event)">Удалить фото</button>';
-    if (c.toBlob) {
-      c.toBlob(b => { T.photoBlob = b; }, 'image/jpeg', 0.8);
-    } else {
-      dataUrlToBlob(dataUrl).then(b => { T.photoBlob = b; });
-    }
-  };
-  im.onerror = () => toast('Не удалось прочитать фото', 'er'); im.src = u;
+  T.photoPromise = new Promise(resolve => {
+    im.onload = () => {
+      const maxSide = 600;
+      const k = Math.min(1, maxSide / Math.max(im.width, im.height)), c = document.createElement('canvas');
+      c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(u);
+      const dataUrl = c.toDataURL('image/jpeg', 0.8);
+      T.photoDataUrl = dataUrl;
+      T.photo = dataUrl;
+      T.photoDeleted = false;
+      $('#pp').innerHTML = `<img src="${dataUrl}" style="width:100%;max-height:140px;object-fit:contain;display:block;margin:0 auto" alt="">`;
+      const pd = $('#pdel'); if (pd) pd.innerHTML = '<button type="button" class="sm" style="color:var(--er);background:transparent;border:none;cursor:pointer" onclick="delPhoto(event)">Удалить фото</button>';
+      if (c.toBlob) {
+        c.toBlob(b => { T.photoBlob = b; resolve(b); }, 'image/jpeg', 0.8);
+      } else {
+        dataUrlToBlob(dataUrl).then(b => { T.photoBlob = b; resolve(b); }).catch(() => resolve(null));
+      }
+    };
+    im.onerror = () => { toast('Не удалось прочитать фото', 'er'); resolve(null); };
+  });
+  im.src = u;
 }
 
 // Сохранение карточки товара в БД + выгрузка фото в Supabase Storage
@@ -1102,11 +1151,16 @@ function psave(id) {
     if (fc === '__new') { const nn = $('#fcn').value.trim(); if (!nn) throw new Error('Введите название категории'); catId = await createCat(nn, null); }
     else if (fc) { catId = fc; if (fs === '__new') { const nn = $('#fsn').value.trim(); if (!nn) throw new Error('Введите название подкатегории'); catId = await createCat(nn, fc); } else if (fs) catId = fs; }
 
+    if (T.photoPromise) await T.photoPromise;
+
     const prodId = id || genUUID();
     let photoUrl = T.photo || null;
 
     if (T.photoDeleted) {
       photoUrl = null;
+      if (id) {
+        try { await sb.storage.from('product-photos').remove([`${STORE}/${id}.jpg`]); } catch (e) { console.warn('Storage remove error:', e); }
+      }
     } else if (T.photoBlob) {
       const filePath = `${STORE}/${prodId}.jpg`;
       try {
