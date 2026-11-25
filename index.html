@@ -909,7 +909,19 @@ function openDoc(k, id) {
     return `<div class="ln" data-id="${i.id}" style="padding:8px 0;border-bottom:1px solid var(--br)"><div class="r"><div class="f"><b>${n}</b>${k === 'i' ? `<small>по учёту ${i.book_qty}</small>` : ''}</div><button class="x" aria-label="Убрать строку" onclick="this.closest('.ln').remove()">✕</button></div><div class="r" style="margin-top:6px"><label style="flex:1;margin:0">${k === 'i' ? 'Посчитано' : 'Кол-во'}<input class="iq" inputmode="numeric" value="${val(i)}"></label>${k === 'i' ? '' : `<label style="flex:1;margin:0">${k === 's' ? 'Цена' : 'Закупочная цена за шт'}<input class="ip" inputmode="decimal" value="${pv(i)}"></label>`}</div></div>`;
   }).join('');
   const sm = k === 's' ? `<div class="bar"><b>Итого</b><b>${fmt(d.total_amount)}</b></div><div class="bar"><span>Себестоимость</span><span>${fmt(d.total_cogs)}</span></div><div class="bar"><span>Валовая прибыль</span><span>${fmt(d.total_amount - d.total_cogs)}</span></div>` : k === 'p' ? `<div class="bar"><b>Итого</b><b>${fmt(d.total_amount)}</b></div>` : '';
-  modal(`<h2>${DN[k]} № ${d.n ?? '—'}</h2><small>${new Date(d.created_at).toLocaleString('ru-RU')}${d.deleted ? ' · помечен на удаление' : ''}</small><div class="c">${lines}${sm}</div><div class="row">${d.deleted ? `<button class="gr" onclick="markDoc('${k}','${id}',false)">Снять пометку</button>` : `<button class="gr" onclick="saveDoc('${k}','${id}')">Исправить</button><button class="rd" onclick="ask('Пометить на удаление? Остатки вернутся.',()=>markDoc('${k}','${id}',true))">Пометить на удаление</button>`}</div><button class="big" onclick="closeModal()">Закрыть</button>`);
+  const actBtn = d.deleted
+    ? `<button type="button" class="btn-save" style="background:var(--ok)" onclick="markDoc('${k}','${id}',false)">Снять пометку</button>`
+    : `<button type="button" class="btn-save" style="background:var(--ok)" onclick="saveDoc('${k}','${id}')">Исправить</button>`;
+  modal(`
+  <div class="sh-head">
+    <button type="button" class="btn-cancel" onclick="closeModal()">Закрыть</button>
+    <h2>${DN[k]} № ${d.n ?? '—'}</h2>
+    ${actBtn}
+  </div>
+  <small>${new Date(d.created_at).toLocaleString('ru-RU')}${d.deleted ? ' · помечен на удаление' : ''}</small>
+  <div class="c">${lines}${sm}</div>
+  ${d.deleted ? '' : `<button class="big rd" onclick="ask('Пометить на удаление? Остатки вернутся.',()=>markDoc('${k}','${id}',true))">Пометить на удаление</button>`}
+  `);
 }
 
 /* Сохранение изменений в существующем документе */
@@ -1311,7 +1323,7 @@ async function chooseStore() {
             <button class="pb big" onclick="chooseStore()">Выбрать другой магазин</button>`;
           toast(e.message || String(e), 'er');
         }
-      });
+      }, STORE && BRANCH ? '<button class="big" onclick="render()">Отмена</button>' : '');
   } catch (e) {
     $('#nav').style.display = 'none';
     $('#app').innerHTML = `<h1>Ошибка</h1><p class="mu">${esc(e.message || String(e))}</p><button class="pb big" onclick="location.reload()">Повторить</button>`;
