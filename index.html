@@ -656,23 +656,32 @@ function expEdit(id) {
   if (!ECATS.length) return toast('Сначала добавьте категории расходов', 'er');
   const e = id ? EXPC[id] : null; T = { id, cat: e ? e.category_id : ECATS[0].id };
   if (e && e.deleted) {
-    return modal(`<h2>Расход</h2><small>${fmtDate(e.spent_on)} · помечен на удаление</small>
+    return modal(`
+    <div class="sh-head">
+      <button type="button" class="btn-cancel" onclick="closeModal()">Закрыть</button>
+      <h2>Расход</h2>
+      <button type="button" class="btn-save" style="background:var(--ok)" onclick="expMark('${e.id}',false)">Снять пометку</button>
+    </div>
+    <small>${fmtDate(e.spent_on)} · помечен на удаление</small>
     <div class="c">
       <div class="bar"><span>Категория</span><b>${esc(ecatName(e.category_id))}</b></div>
       <div class="bar"><span>Сумма</span><b>${fmt(e.amount)}</b></div>
       ${e.note ? `<div class="bar"><span>Комментарий</span><span>${esc(e.note)}</span></div>` : ''}
-    </div>
-    <div class="row"><button class="gr" onclick="expMark('${e.id}',false)">Снять пометку</button></div>
-    <button class="big" onclick="closeModal()">Закрыть</button>`);
+    </div>`);
   }
-  modal(`<h2>${e ? 'Расход' : 'Новый расход'}</h2>
+  modal(`
+  <div class="sh-head">
+    <button type="button" class="btn-cancel" onclick="closeModal()">${e ? 'Закрыть' : 'Отмена'}</button>
+    <h2>${e ? 'Расход' : 'Новый расход'}</h2>
+    <button type="button" class="btn-save" ${e ? 'style="background:var(--ok)"' : ''} onclick="expSave()">${e ? 'Исправить' : 'Сохранить'}</button>
+  </div>
   <label>Сумма, сом<input id="xa" inputmode="decimal" value="${e ? e.amount : ''}"></label>
   <label>Дата<input id="xd" type="date" value="${e ? e.spent_on : today()}"></label>
   <label>Категория<select id="xc" style="${selSt};margin-top:4px" onchange="$('#xcn').style.display=this.value==='__new'?'block':'none'">${ECATS.map(c => `<option value="${c.id}" ${c.id === T.cat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}<option value="__new">＋ Новая категория…</option></select></label>
   <input id="xcn" placeholder="Название новой категории" style="display:none;margin-bottom:10px">
   <label>Комментарий<input id="xn" value="${esc(e ? e.note || '' : '')}"></label>
   ${!e && BRANCHES.length > 1 ? `<label>Филиал<select id="xb" style="${selSt};margin-top:4px">${BRANCHES.map(b => `<option value="${b.id}" ${b.id === BRANCH ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>` : ''}
-  ${e ? `<div class="row"><button class="gr" onclick="expSave()">Исправить</button><button class="rd" onclick="ask('Пометить расход на удаление?',()=>expMark('${e.id}',true))">Пометить на удаление</button></div><button class="big" onclick="closeModal()">Закрыть</button>` : `<div class="row"><button onclick="closeModal()">Отмена</button><button class="pb" onclick="expSave()">Сохранить</button></div>`}`);
+  ${e ? `<button class="big rd" onclick="ask('Пометить расход на удаление?',()=>expMark('${e.id}',true))">Пометить на удаление</button>` : ''}`);
 }
 function expSave() {
   const tid = T.id;
